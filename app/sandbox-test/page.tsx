@@ -90,13 +90,13 @@ export default function SandboxTestPage() {
   }
 
   return (
-    <main className="stack">
+    <div className="stack">
       <header className="page-header">
-        <p className="eyebrow">Phase 1</p>
+        <p className="eyebrow">Phase 1 · Smoke Test</p>
         <h1>BrowserPod Smoke Test</h1>
         <p>
-          This proves ForkLab can boot a disposable browser sandbox, write files, run
-          code, and stream output.
+          This proves ForkLab can boot a disposable browser sandbox, write files,
+          run code, and stream output.
         </p>
       </header>
 
@@ -108,7 +108,7 @@ export default function SandboxTestPage() {
         />
         <div className="card">
           <h3>Run control</h3>
-          <p style={{ color: "var(--muted)" }}>
+          <p style={{ color: "var(--outline)", fontSize: 13, marginBottom: 12 }}>
             The BrowserPod code runs in this client component using
             NEXT_PUBLIC_BROWSERPOD_API_KEY.
           </p>
@@ -118,27 +118,24 @@ export default function SandboxTestPage() {
             onClick={runSmokeTest}
             disabled={!["idle", "passed", "failed"].includes(status)}
           >
-            Run BrowserPod Smoke Test
+            ▶ Run BrowserPod Smoke Test
           </button>
         </div>
       </div>
 
+      {/* ── Browser isolation debug ────────────────────────────── */}
       <section className="panel">
-        <div className="status-row" style={{ marginBottom: 14 }}>
-          <span
-            className={`badge ${
-              debugInfo?.crossOriginIsolated ? "ok" : "fail"
-            }`}
-          >
-            Browser isolation debug
+        <div className="status-row" style={{ marginBottom: 12 }}>
+          <span className={`badge ${debugInfo?.crossOriginIsolated ? "ok" : "fail"}`}>
+            {debugInfo?.crossOriginIsolated ? "✓" : "✗"} Cross-origin isolation
           </span>
           <span className={`badge ${debugInfo?.isTopLevel ? "ok" : "fail"}`}>
-            top-level tab
+            {debugInfo?.isTopLevel ? "✓" : "✗"} Top-level tab
           </span>
         </div>
 
         {debugInfo && !debugInfo.isTopLevel ? (
-          <div className="error-panel" style={{ marginBottom: 14 }}>
+          <div className="error-panel" style={{ marginBottom: 12 }}>
             Open this page in a real top-level browser tab, not an embedded IDE
             preview.
           </div>
@@ -168,6 +165,6 @@ navigator.userAgent: ${debugInfo?.userAgent ?? "loading"}`}</pre>
           </ul>
         </section>
       ) : null}
-    </main>
+    </div>
   );
 }

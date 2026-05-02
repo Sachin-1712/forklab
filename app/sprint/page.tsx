@@ -209,10 +209,11 @@ export default function SprintPage() {
   const proofReady = status === "passed";
 
   return (
-    <main className="stack">
+    <div className="stack">
+      {/* ── Header ─────────────────────────────────────────────── */}
       <header className="page-header">
-        <p className="eyebrow">Phase 2</p>
-        <h1>Sample Sprint</h1>
+        <p className="eyebrow">Live BrowserPod Sprint</p>
+        <h1>CSV Export Fix</h1>
         <p>
           A single reliable BrowserPod branch writes a tiny sample project, runs a
           failing CSV export test, applies a deterministic patch, and reruns the test
@@ -220,10 +221,12 @@ export default function SprintPage() {
         </p>
       </header>
 
+      {/* ── Proof Banner ───────────────────────────────────────── */}
       <section className="proof-banner">
         AI-generated code is untrusted until verified inside BrowserPod.
       </section>
 
+      {/* ── Status + Controls ──────────────────────────────────── */}
       <div className="grid two">
         <BrowserPodStatusCard
           status={status}
@@ -231,7 +234,7 @@ export default function SprintPage() {
           detail="One live BrowserPod branch. The two extra branch cards show the intended expansion path."
         />
         <div className="card">
-          <div className="status-row" style={{ marginBottom: 12 }}>
+          <div className="status-row" style={{ marginBottom: 10 }}>
             <span className="badge ok">Demo Safe Mode</span>
             <label className="badge" style={{ cursor: "pointer" }}>
               <input
@@ -240,11 +243,11 @@ export default function SprintPage() {
                 onChange={(event) => setSafeMode(event.target.checked)}
                 disabled={isRunning}
               />{" "}
-              ON by default
+              ON
             </label>
           </div>
           <h3>Run control</h3>
-          <p style={{ color: "var(--muted)" }}>
+          <p style={{ color: "var(--outline)", fontSize: 13, marginBottom: 12 }}>
             Uses deterministic fallback patches so the live demo completes even if
             AI/network fails.
           </p>
@@ -254,30 +257,32 @@ export default function SprintPage() {
             onClick={runSprint}
             disabled={isRunning}
           >
-            Start Sample Sprint
+            ▶ Start Sample Sprint
           </button>
         </div>
       </div>
 
+      {/* ── Branch Arena ───────────────────────────────────────── */}
       <div className="grid three">
         <BranchCard
           title="Sidebar Fix"
           status="Queued"
-          description="Fallback branch card reserved for the later 3-pod visual mode."
+          description="Planned branch for mobile navigation state — not yet live."
         />
         <BranchCard
           title="CSV Export Fix"
           status={stage === "passed" ? "Verified" : stage === "idle" ? "Ready" : "Running"}
           live
-          description="Live BrowserPod branch executing the fail to patch to pass flow."
+          description="Live BrowserPod branch executing the fail → patch → pass flow."
         />
         <BranchCard
           title="Email Validation Fix"
           status="Queued"
-          description="Fallback branch card reserved for the later 3-pod visual mode."
+          description="Planned branch for signup validation — not yet live."
         />
       </div>
 
+      {/* ── Timeline + Test Status ─────────────────────────────── */}
       <div className="grid two">
         <SprintTimeline activeIndex={activeIndex} />
         <div className="card stack">
@@ -287,19 +292,19 @@ export default function SprintPage() {
               <div>
                 <span>First run</span>
                 <strong className={firstTestStatus === "failed" ? "text-fail" : ""}>
-                  {firstTestStatus === "failed" ? "failed as expected" : "not run"}
+                  {firstTestStatus === "failed" ? "FAILED ✗" : "not run"}
                 </strong>
               </div>
               <div>
                 <span>Patch</span>
                 <strong className={patchApplied ? "text-ok" : ""}>
-                  {patchApplied ? "applied" : "waiting"}
+                  {patchApplied ? "APPLIED ✓" : "waiting"}
                 </strong>
               </div>
               <div>
                 <span>Second run</span>
                 <strong className={secondTestStatus === "passed" ? "text-ok" : ""}>
-                  {secondTestStatus === "passed" ? "passed" : "not run"}
+                  {secondTestStatus === "passed" ? "PASSED ✓" : "not run"}
                 </strong>
               </div>
             </div>
@@ -336,17 +341,18 @@ export default function SprintPage() {
         </div>
       </div>
 
+      {/* ── Diff + PR Summary ──────────────────────────────────── */}
       <div className="grid two">
         <div className="card">
-          <h3>Before/after diff</h3>
-          <p style={{ color: "var(--muted)" }}>
+          <h3>Before / after diff</h3>
+          <p style={{ color: "var(--outline)", fontSize: 13 }}>
             The known patch slugifies report names before adding the .csv extension.
           </p>
           <DiffViewer diff={exportCsvDiff} />
         </div>
         <div className="card">
-          <h3>Copyable PR summary placeholder</h3>
-          <p style={{ color: "var(--muted)" }}>
+          <h3>PR summary</h3>
+          <p style={{ color: "var(--outline)", fontSize: 13 }}>
             Not connected to GitHub yet. This is a prepared handoff artifact for the
             verified CSV branch.
           </p>
@@ -366,8 +372,10 @@ export default function SprintPage() {
         </div>
       </div>
 
+      {/* ── Terminal ───────────────────────────────────────────── */}
       <TerminalPanel title="/sprint · CSV Export Fix" nativeRef={terminalRef} lines={logs} />
 
+      {/* ── Proof Report ───────────────────────────────────────── */}
       <ProofReport
         status={status === "passed" ? "passed" : status === "failed" ? "failed" : "pending"}
         summary={
@@ -382,6 +390,7 @@ export default function SprintPage() {
         ]}
       />
 
+      {/* ── Error Display ──────────────────────────────────────── */}
       {error ? (
         <section className="error-panel" aria-live="polite">
           <h3>{error.title}</h3>
@@ -393,6 +402,6 @@ export default function SprintPage() {
           </ul>
         </section>
       ) : null}
-    </main>
+    </div>
   );
 }

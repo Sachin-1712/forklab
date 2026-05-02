@@ -30,18 +30,18 @@ export function BrowserPodStatusCard({
   title?: string;
   detail?: string;
 }) {
-  const tone = status === "passed" ? "ok" : status === "failed" ? "fail" : "warn";
+  const tone = status === "passed" ? "ok" : status === "failed" ? "fail" : "info";
 
   return (
-    <div className="card status-card">
+    <div className={`card status-card${status === "passed" ? " card-glow" : ""}`}>
       <div className="status-row">
         <span className={`badge ${tone}`}>{statusLabels[status]}</span>
         <span className="badge">SharedArrayBuffer</span>
         <span className="badge">Node 22</span>
       </div>
       <div>
-        <h3>{title}</h3>
-        <p style={{ color: "var(--muted)", marginBottom: 0 }}>
+        <h3 style={{ fontSize: 16 }}>{title}</h3>
+        <p style={{ color: "var(--outline)", marginBottom: 0, fontSize: 13 }}>
           {detail ?? "Disposable in-browser sandbox controlled from ForkLab."}
         </p>
       </div>

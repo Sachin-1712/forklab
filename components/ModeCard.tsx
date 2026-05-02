@@ -10,8 +10,10 @@ export function ModeCard({
   return (
     <div className="card">
       <span className="badge warn">{label}</span>
-      <h3 style={{ marginTop: 14 }}>{title}</h3>
-      <p style={{ color: "var(--muted)", marginBottom: 0 }}>{description}</p>
+      <h3 style={{ marginTop: 10 }}>{title}</h3>
+      <p style={{ color: "var(--outline)", marginBottom: 0, fontSize: 13 }}>
+        {description}
+      </p>
     </div>
   );
 }

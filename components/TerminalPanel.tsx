@@ -14,7 +14,12 @@ export function TerminalPanel({
   return (
     <div className="terminal-panel">
       <div className="terminal-title">
-        <span>{title}</span>
+        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+          <div className="terminal-title-dots">
+            <span /><span /><span />
+          </div>
+          <span>{title}</span>
+        </div>
         <span>BrowserPod terminal</span>
       </div>
       <div className="terminal-body">

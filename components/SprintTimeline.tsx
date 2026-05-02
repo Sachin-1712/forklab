@@ -19,7 +19,13 @@ export function SprintTimeline({ activeIndex }: { activeIndex: number }) {
             <div className={`timeline-step ${state}`} key={step}>
               <span className="dot" />
               <span>{step}</span>
-              <span>{index < activeIndex ? "done" : index === activeIndex ? "now" : "queued"}</span>
+              <span>
+                {index < activeIndex
+                  ? "done"
+                  : index === activeIndex
+                    ? "now"
+                    : "queued"}
+              </span>
             </div>
           );
         })}
