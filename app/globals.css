@@ -909,24 +909,274 @@ h3 {
   color: var(--on-surface-variant);
 }
 
+/* --- Run Orchestration Shell ------------------------------------------ */
+.run-shell,
+.branch-shell {
+  width: min(1400px, calc(100vw - 32px));
+  margin-left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 16px;
+}
+
+.run-hero {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(0,205,255,0.08), var(--surface) 48%);
+}
+
+.run-hero > div:first-child {
+  min-width: 0;
+}
+
+.run-id-panel {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  min-width: min(360px, 100%);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px;
+  background: var(--bg);
+}
+
+.run-id-panel span {
+  color: var(--outline);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.run-id-panel strong {
+  color: var(--primary-container);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+
+.run-prompt-panel {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  background: var(--surface);
+}
+
+.run-prompt-panel h2 {
+  margin-bottom: 0;
+  overflow-wrap: anywhere;
+}
+
+.run-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  min-width: 0;
+}
+
+.run-toolbar .button {
+  flex: 0 1 auto;
+  padding-inline: 14px;
+}
+
+.run-dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.45fr) minmax(320px, 0.75fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.run-branch-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  min-width: 0;
+}
+
+.run-side-panels {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.run-branch-card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 14px;
+  background: var(--surface);
+}
+
+.run-branch-card h3 {
+  margin-bottom: 4px;
+  overflow-wrap: anywhere;
+}
+
+.run-branch-card p {
+  margin: 0;
+  color: var(--on-surface-variant);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.run-progress {
+  height: 5px;
+  overflow: hidden;
+  border-radius: var(--radius-pill);
+  background: var(--surface-container-highest);
+}
+
+.run-progress span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--secondary-container), var(--primary-container));
+  transition: width 280ms ease;
+}
+
+.run-event-list {
+  display: grid;
+  gap: 8px;
+  max-height: 520px;
+  overflow: auto;
+}
+
+.run-event {
+  display: grid;
+  gap: 3px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: var(--bg);
+}
+
+.run-event span {
+  color: var(--outline);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.run-event strong {
+  color: var(--primary-container);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.run-event p {
+  margin: 0;
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.run-empty-state {
+  border: 1px dashed var(--border-elevated);
+  border-radius: var(--radius);
+  padding: 16px;
+  color: var(--outline);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.truth-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+  align-items: start;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: var(--bg);
+}
+
+.truth-row p {
+  margin: 0;
+  color: var(--on-surface-variant);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.branch-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.8fr) minmax(0, 1.2fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.branch-step-list {
+  display: grid;
+  gap: 8px;
+}
+
+.branch-step {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: var(--bg);
+}
+
+.branch-step > span {
+  width: 8px;
+  height: 8px;
+  margin-top: 6px;
+  border-radius: 50%;
+  background: var(--primary-container);
+  box-shadow: 0 0 10px rgba(0,205,255,0.35);
+}
+
+.branch-step strong {
+  color: var(--on-surface);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.branch-step p {
+  margin: 2px 0 0;
+  color: var(--on-surface-variant);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 /* --- Responsive ------------------------------------------------------- */
 @media (max-width: 880px) {
   .hero h1 { font-size: 28px; }
   .grid.two, .grid.three, .report, .pod-bento,
   .security-panel, .settings-grid, .live-demo-grid,
   .command-layout, .truth-grid,
-  .agent-grid { grid-template-columns: 1fr; }
+  .agent-grid, .run-dashboard-grid, .run-branch-grid,
+  .branch-workspace-grid { grid-template-columns: 1fr; }
   .command-sidebar,
   .agent-dashboard {
     grid-column: auto;
     grid-row: auto;
   }
-  .command-center {
+  .command-center,
+  .run-shell,
+  .branch-shell {
     width: 100%;
     margin-left: 0;
     transform: none;
   }
-  .dashboard-header { flex-direction: column; }
+  .dashboard-header,
+  .run-hero,
+  .run-prompt-panel { flex-direction: column; }
 }
 @media (max-width: 520px) {
   .main-content { width: calc(100% - 16px); }

@@ -1,8 +1,19 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
+import {
+  branchPath,
+  createBranchList,
+  createRunId,
+  createRunSnapshot,
+  loadRunSnapshot,
+  publishRunEvent,
+  runPath,
+  saveRunSnapshot,
+} from "@/lib/runEvents";
 
 type TemplateId = "sprint" | "variant" | "docsproof" | "packageguard";
 type ModalType = "files" | "connectors" | "skills" | null;
@@ -70,6 +81,7 @@ const defaultPrompt =
   "Fix the CSV export bug and compare it against queued Sidebar and Email Validation branches.";
 
 export default function TryPage() {
+  const router = useRouter();
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateId>("sprint");
   const [prompt, setPrompt] = useState(defaultPrompt);
   const [modal, setModal] = useState<ModalType>(null);
@@ -121,6 +133,36 @@ export default function TryPage() {
   }, [launchedTemplate, prompt]);
 
   function launchAgents() {
+    if (selectedTemplate === "sprint") {
+      const runId = createRunId();
+      const runPrompt = prompt || defaultPrompt;
+      const snapshot = createRunSnapshot({ runId, prompt: runPrompt });
+      let tabsBlocked = false;
+
+      saveRunSnapshot(runId, snapshot);
+      publishRunEvent(runId, {
+        type: "run.created",
+        message: runPrompt,
+        terminalLine: "$ run.created from ForkLab Command Center",
+      });
+
+      createBranchList().forEach((branch) => {
+        const opened = window.open(branchPath(runId, branch.id), "_blank");
+        if (!opened) tabsBlocked = true;
+      });
+
+      if (tabsBlocked) {
+        const latestSnapshot = loadRunSnapshot(runId);
+
+        if (latestSnapshot) {
+          saveRunSnapshot(runId, { ...latestSnapshot, tabsBlocked: true });
+        }
+      }
+
+      router.push(runPath(runId));
+      return;
+    }
+
     setLaunchedTemplate(selectedTemplate);
   }
 
