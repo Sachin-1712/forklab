@@ -40,8 +40,8 @@ export function BrowserPodStatusCard({
         <span className="badge">Node 22</span>
       </div>
       <div>
-        <h3 style={{ fontSize: 16 }}>{title}</h3>
-        <p style={{ color: "var(--outline)", marginBottom: 0, fontSize: 13 }}>
+        <h3>{title}</h3>
+        <p style={{ color: "var(--on-surface-variant)", marginBottom: 0, fontSize: 13 }}>
           {detail ?? "Disposable in-browser sandbox controlled from ForkLab."}
         </p>
       </div>

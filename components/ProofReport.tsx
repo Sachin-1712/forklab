@@ -16,7 +16,7 @@ export function ProofReport({
           {status === "passed" ? "✓" : status === "failed" ? "✗" : "◌"} Proof report: {status}
         </span>
       </div>
-      <p style={{ color: "var(--text-muted)", fontSize: 13, lineHeight: 1.6 }}>{summary}</p>
+      <p style={{ color: "var(--outline)", fontSize: 13, lineHeight: 1.6 }}>{summary}</p>
       <div className="report">
         {checks.map((check) => (
           <div className="card" key={check}>

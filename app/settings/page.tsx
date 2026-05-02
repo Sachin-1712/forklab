@@ -17,7 +17,7 @@ export default function SettingsPage() {
           <span className="badge ok">✓ Safety Status: Active</span>
           <span className="badge">Demo Build</span>
         </div>
-        <p style={{ color: "var(--on-surface-variant)", fontSize: 14, lineHeight: 1.6 }}>
+        <p style={{ color: "var(--on-surface-variant)", fontSize: 13, lineHeight: 1.6 }}>
           This build runs in Demo Safe Mode. BrowserPod execution is real (when a
           valid API key is present), but AI patching is replaced with deterministic
           fallback patches. No code leaves the browser sandbox.
@@ -25,7 +25,7 @@ export default function SettingsPage() {
       </section>
 
       <section>
-        <h2 style={{ fontSize: 24, marginBottom: 12 }}>Execution settings</h2>
+        <h2 style={{ marginBottom: 12 }}>Execution settings</h2>
         <div className="settings-grid">
           <div className="setting-item">
             <div>
@@ -73,7 +73,7 @@ export default function SettingsPage() {
       </section>
 
       <section className="panel">
-        <h2 style={{ fontSize: 24, marginBottom: 12 }}>Security guarantees</h2>
+        <h2 style={{ marginBottom: 12 }}>Security guarantees</h2>
         <div className="grid two">
           <div className="stack" style={{ gap: 8 }}>
             <div className="security-check">Ephemeral containers — each pod is destroyed after the sprint</div>
@@ -92,7 +92,7 @@ export default function SettingsPage() {
         <div className="status-row" style={{ marginBottom: 12 }}>
           <span className="badge warn">Current Scope</span>
         </div>
-        <h3 style={{ fontSize: 16 }}>What&apos;s live in this build</h3>
+        <h3>What&apos;s live in this build</h3>
         <div className="artifact-list" style={{ marginBottom: 16 }}>
           <div><span>/sandbox-test</span><strong className="text-ok">Live</strong></div>
           <div><span>/sprint — CSV Export Fix</span><strong className="text-ok">Live</strong></div>

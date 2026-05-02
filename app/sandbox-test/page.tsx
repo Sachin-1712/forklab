@@ -5,6 +5,7 @@ import { BrowserPodStatusCard } from "@/components/BrowserPodStatusCard";
 import { TerminalPanel } from "@/components/TerminalPanel";
 import {
   bootForkLabPod,
+  installBrowserPodRuntimeErrorGuard,
   makeStorageKey,
   toUserFacingError,
   writeTextFile,
@@ -30,6 +31,9 @@ export default function SandboxTestPage() {
   const [debugInfo, setDebugInfo] = useState<BrowserDebugInfo | null>(null);
 
   useEffect(() => {
+    const uninstallBrowserPodRuntimeErrorGuard =
+      installBrowserPodRuntimeErrorGuard();
+
     setDebugInfo({
       isTopLevel: window.top === window,
       isSecureContext: window.isSecureContext,
@@ -37,6 +41,8 @@ export default function SandboxTestPage() {
       href: document.location.href,
       userAgent: navigator.userAgent,
     });
+
+    return uninstallBrowserPodRuntimeErrorGuard;
   }, []);
 
   async function runSmokeTest() {
@@ -77,6 +83,7 @@ export default function SandboxTestPage() {
       });
 
       setStatus("passed");
+      localStorage.setItem("forklab:smoke-test-passed", "true");
       setLogs((current) => [
         ...current,
         "Passed: BrowserPod booted, wrote test.js, ran Node, and streamed output.",

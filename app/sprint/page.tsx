@@ -1,14 +1,17 @@
 "use client";
 
-import { useRef, useState } from "react";
+import Link from "next/link";
+import { useEffect, useRef, useState } from "react";
 import { BrowserPodStatusCard } from "@/components/BrowserPodStatusCard";
 import { BranchCard } from "@/components/BranchCard";
+import { DemoReadyChecklist } from "@/components/DemoReadyChecklist";
 import { DiffViewer } from "@/components/DiffViewer";
 import { ProofReport } from "@/components/ProofReport";
 import { SprintTimeline } from "@/components/SprintTimeline";
 import { TerminalPanel } from "@/components/TerminalPanel";
 import {
   bootForkLabPod,
+  installBrowserPodRuntimeErrorGuard,
   makeStorageKey,
   readTextFile,
   toUserFacingError,
@@ -56,6 +59,8 @@ export default function SprintPage() {
     "Ready. This sprint uses one live BrowserPod branch for the CSV export bug.",
   ]);
   const [error, setError] = useState<UserFacingError | null>(null);
+
+  useEffect(() => installBrowserPodRuntimeErrorGuard(), []);
 
   async function runSprint() {
     setStatus("booting");
@@ -139,6 +144,7 @@ export default function SprintPage() {
         throw new Error("Expected the patched CSV export test run to pass.");
       }
       setStatus("passed");
+      localStorage.setItem("forklab:sprint-proof-passed", "true");
       setSecondTestStatus("passed");
       setStage("passed");
       setActiveIndex(6);
@@ -219,6 +225,11 @@ export default function SprintPage() {
           failing CSV export test, applies a deterministic patch, and reruns the test
           to produce proof.
         </p>
+        <div className="actions command-actions">
+          <Link href="/try" className="button">
+            Back to Command Center
+          </Link>
+        </div>
       </header>
 
       {/* ── Proof Banner ───────────────────────────────────────── */}
@@ -227,7 +238,7 @@ export default function SprintPage() {
       </section>
 
       {/* ── Status + Controls ──────────────────────────────────── */}
-      <div className="grid two">
+      <div className="live-demo-grid">
         <BrowserPodStatusCard
           status={status}
           title="CSV Export Fix"
@@ -281,6 +292,11 @@ export default function SprintPage() {
           description="Planned branch for signup validation — not yet live."
         />
       </div>
+
+      <DemoReadyChecklist sprintProofPassed={proofReady} />
+
+      {/* ── Terminal ───────────────────────────────────────────── */}
+      <TerminalPanel title="/sprint · CSV Export Fix" nativeRef={terminalRef} lines={logs} />
 
       {/* ── Timeline + Test Status ─────────────────────────────── */}
       <div className="grid two">
@@ -371,9 +387,6 @@ export default function SprintPage() {
           </button>
         </div>
       </div>
-
-      {/* ── Terminal ───────────────────────────────────────────── */}
-      <TerminalPanel title="/sprint · CSV Export Fix" nativeRef={terminalRef} lines={logs} />
 
       {/* ── Proof Report ───────────────────────────────────────── */}
       <ProofReport

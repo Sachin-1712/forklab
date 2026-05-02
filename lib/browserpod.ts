@@ -56,6 +56,34 @@ export type UserFacingError = {
   steps: string[];
 };
 
+export function installBrowserPodRuntimeErrorGuard() {
+  if (typeof window === "undefined") return () => {};
+
+  function onError(event: ErrorEvent) {
+    if (!isBrowserPodRuntimeError(event.error ?? event.message)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+
+  function onUnhandledRejection(event: PromiseRejectionEvent) {
+    if (!isBrowserPodRuntimeError(event.reason)) return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+  }
+
+  window.addEventListener("error", onError, { capture: true });
+  window.addEventListener("unhandledrejection", onUnhandledRejection, {
+    capture: true,
+  });
+
+  return () => {
+    window.removeEventListener("error", onError, { capture: true });
+    window.removeEventListener("unhandledrejection", onUnhandledRejection, {
+      capture: true,
+    });
+  };
+}
+
 export function getBrowserPodApiKey() {
   return process.env.NEXT_PUBLIC_BROWSERPOD_API_KEY?.trim() ?? "";
 }
@@ -214,5 +242,16 @@ function isBrowserPodError(
       typeof error === "object" &&
       "userFacing" in error &&
       (error as { userFacing?: unknown }).userFacing,
+  );
+}
+
+function isBrowserPodRuntimeError(error: unknown) {
+  const message =
+    error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  const lowerMessage = message.toLowerCase();
+
+  return (
+    lowerMessage.includes("websocket connection failed") &&
+    lowerMessage.includes("api key")
   );
 }

@@ -73,15 +73,27 @@ Permissions-Policy: cross-origin-isolated=(self)
 
 Local BrowserPod testing should use `http://localhost:3000`.
 
+## Current demo modes
+
+- `/try`: ForkLab Command Center concept. This is the polished prompt/workbench
+  layer for task templates, placeholder connectors, skills, and branch dashboards.
+- `/sandbox-test`: real BrowserPod smoke proof. Boots BrowserPod, writes
+  `test.js`, runs Node, and streams output.
+- `/sprint`: real CSV Export Fix proof. Writes sample files, observes a failing
+  test, applies a deterministic patch, reruns the test, and generates proof.
+- Variant Arena: UI preview only for now. It does not claim BrowserPod
+  verification until that mode is implemented.
+
 ## Demo flow
 
-1. Open `/sandbox-test`.
-2. Click **Run BrowserPod Smoke Test**.
-3. Confirm BrowserPod boots, writes `test.js`, runs Node, and prints:
+1. Open `/try` to show the Command Center concept and honest demo boundaries.
+2. Open `/sandbox-test`.
+3. Click **Run BrowserPod Smoke Test**.
+4. Confirm BrowserPod boots, writes `test.js`, runs Node, and prints:
    `ForkLab BrowserPod smoke test` and `4`.
-4. Open `/sprint`.
-5. Click **Start Sample Sprint**.
-6. Watch the live CSV Export Fix branch fail a test, apply the deterministic
+5. Open `/sprint`.
+6. Click **Start Sample Sprint**.
+7. Watch the live CSV Export Fix branch fail a test, apply the deterministic
    patch, rerun tests, and generate a proof report.
 
 The live demo should complete in 3-5 minutes once the BrowserPod key is present.
