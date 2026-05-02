@@ -859,17 +859,19 @@ h3 {
   position: fixed;
   inset: 0;
   z-index: 200;
-  display: grid;
-  place-items: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   padding: 16px;
   background: rgba(0,0,0,0.72);
   backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
 }
 
 .command-modal {
   width: min(720px, 100%);
-  max-height: min(760px, calc(100vh - 32px));
-  overflow: auto;
+  max-height: 90vh;
+  overflow-y: auto;
   border: 1px solid var(--border-elevated);
   border-radius: var(--radius-lg);
   padding: 16px;

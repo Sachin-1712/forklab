@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   branchPath,
   createBranchList,
@@ -85,11 +86,13 @@ export default function TryPage() {
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateId>("sprint");
   const [prompt, setPrompt] = useState(defaultPrompt);
   const [modal, setModal] = useState<ModalType>(null);
+  const [mounted, setMounted] = useState(false);
   const [uploadedFiles, setUploadedFiles] = useState<string[]>([]);
   const [launchedTemplate, setLaunchedTemplate] = useState<TemplateId | null>(null);
   const [sprintVerified, setSprintVerified] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     setSprintVerified(localStorage.getItem("forklab:sprint-proof-passed") === "true");
   }, []);
 
@@ -351,15 +354,18 @@ export default function TryPage() {
         </div>
       </section>
 
-      {modal ? (
-        <CommandModal title={modalTitle(modal)} onClose={() => setModal(null)}>
-          {modal === "connectors" ? <ConnectorsModal /> : null}
-          {modal === "files" ? (
-            <FilesModal files={uploadedFiles} onFilesSelected={onFilesSelected} />
-          ) : null}
-          {modal === "skills" ? <SkillsModal /> : null}
-        </CommandModal>
-      ) : null}
+      {mounted && modal
+        ? createPortal(
+            <CommandModal title={modalTitle(modal)} onClose={() => setModal(null)}>
+              {modal === "connectors" ? <ConnectorsModal /> : null}
+              {modal === "files" ? (
+                <FilesModal files={uploadedFiles} onFilesSelected={onFilesSelected} />
+              ) : null}
+              {modal === "skills" ? <SkillsModal /> : null}
+            </CommandModal>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
