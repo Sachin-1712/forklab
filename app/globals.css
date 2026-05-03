@@ -86,7 +86,13 @@
 /* --- Reset ------------------------------------------------------------ */
 *, *::before, *::after { box-sizing: border-box; }
 
-html { min-height: 100%; background: var(--bg); }
+html {
+  min-height: 100vh;
+  background: var(--bg);
+  scroll-padding-bottom: 112px;
+  overflow-x: hidden;
+  overflow-y: auto;
+}
 
 body {
   min-height: 100vh;
@@ -99,6 +105,8 @@ body {
   font-size: 14px;
   line-height: 20px;
   -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+  overflow-y: auto;
 }
 
 a { color: inherit; text-decoration: none; }
@@ -106,7 +114,7 @@ button, input, textarea { font: inherit; }
 ul, ol { margin: 0; padding: 0; }
 
 /* --- App Shell -------------------------------------------------------- */
-.app-shell { display: flex; flex-direction: column; min-height: 100vh; }
+.app-shell { display: flex; flex-direction: column; min-height: 100vh; width: 100%; overflow-x: hidden; }
 
 /* --- Top Navigation — Glass Panel ------------------------------------- */
 .topbar {
@@ -163,7 +171,7 @@ ul, ol { margin: 0; padding: 0; }
 /* --- Main Content ----------------------------------------------------- */
 .main-content {
   flex: 1; width: min(1152px, calc(100% - 32px));
-  margin: 0 auto; padding: var(--md) 0 64px;
+  margin: 0 auto; padding: var(--md) 0 96px;
 }
 
 /* --- Typography ------------------------------------------------------- */
@@ -1513,6 +1521,7 @@ h3 {
   transform: translateX(-50%);
   display: grid;
   gap: 12px;
+  padding-bottom: 32px;
 }
 
 .arena-live-hero {
@@ -1747,15 +1756,17 @@ h3 {
 
 .arena-card-expanded {
   display: grid;
-  grid-template-columns: minmax(320px, 0.8fr) minmax(0, 1.2fr);
+  grid-template-columns: minmax(320px, 0.85fr) minmax(0, 1.15fr);
   gap: 12px;
-  align-items: start;
+  align-items: stretch;
 }
 
 .arena-card-terminal {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
   min-width: 0;
+  min-height: 420px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px;
@@ -1763,7 +1774,7 @@ h3 {
 }
 
 .terminal-native.compact {
-  min-height: 120px;
+  min-height: 150px;
   max-height: 220px;
   overflow: auto;
 }
@@ -1772,7 +1783,8 @@ h3 {
 .arena-file-preview pre {
   margin: 0;
   overflow: auto;
-  max-height: 260px;
+  min-height: 0;
+  max-height: none;
   color: var(--on-surface-variant);
   font-family: var(--font-mono);
   font-size: 11px;
@@ -1786,12 +1798,15 @@ h3 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12px;
   min-width: 0;
+  min-height: 420px;
 }
 
 .arena-file-preview > div {
   display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 8px;
   min-width: 0;
+  min-height: 420px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 10px;
@@ -1803,6 +1818,49 @@ h3 {
   grid-template-columns: 1fr;
   gap: 12px;
   align-items: start;
+}
+
+.portal-summary {
+  display: grid;
+  gap: 12px;
+}
+
+.portal-summary.compact-panel {
+  gap: 10px;
+}
+
+.portal-summary-grid {
+  display: grid;
+  gap: 8px;
+}
+
+.portal-summary-link {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 1px solid rgba(0,205,255,0.26);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: #050505;
+}
+
+.portal-summary-link span {
+  color: #fff;
+  font-weight: 700;
+}
+
+.portal-summary-link strong {
+  color: var(--primary-container);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.portal-summary-link small {
+  color: var(--outline);
+  font-family: var(--font-mono);
+  font-size: 10px;
 }
 
 .compact-panel {

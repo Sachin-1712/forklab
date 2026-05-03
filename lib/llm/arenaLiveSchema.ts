@@ -336,16 +336,45 @@ function validateArenaLiveFile(value: unknown): ArenaLiveFile {
   if (typeof file.content !== "string" || !file.content.trim()) {
     throw new Error(`Variant file ${file.path} content must be non-empty.`);
   }
+  const content = normalizeGeneratedFileContent(file.path, file.content);
 
-  const lowerContent = file.content.toLowerCase();
+  const lowerContent = content.toLowerCase();
   if (rejectedNeedles.some((needle) => lowerContent.includes(needle))) {
     throw new Error(`Variant file ${file.path} contains unsafe content.`);
   }
 
   return {
     path: file.path,
-    content: file.content,
+    content,
   };
+}
+
+function normalizeGeneratedFileContent(
+  path: ArenaLiveFile["path"],
+  content: string,
+) {
+  let normalized = content
+    .trim()
+    .replace(/\\"/g, '"')
+    .replace(/\\'/g, "'")
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "  ");
+
+  if (path === "public/index.html") {
+    normalized = normalized
+      .replace(/href=["']styles\.css["']/gi, 'href="/styles.css"')
+      .replace(/href=["']\.\/styles\.css["']/gi, 'href="/styles.css"')
+      .replace(/href=["']\/public\/styles\.css["']/gi, 'href="/styles.css"');
+
+    if (!/<link\b[^>]*href=["']\/styles\.css["'][^>]*>/i.test(normalized)) {
+      normalized = normalized.replace(
+        /<\/head>/i,
+        '  <link rel="stylesheet" href="/styles.css" />\n  </head>',
+      );
+    }
+  }
+
+  return normalized;
 }
 
 function isArenaLiveVariantId(value: unknown): value is ArenaLiveVariantId {

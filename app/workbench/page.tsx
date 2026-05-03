@@ -540,18 +540,21 @@ export default function WorkbenchPage() {
       <header className="workbench-hero">
         <div>
           <p className="eyebrow">ForkLab Workbench</p>
-          <h1>Enterprise AI coding workbench</h1>
+          <h1>Enterprise agent workflow (Preview)</h1>
           <p className="muted-copy">
-            Select an issue, launch a secure agent run, review the patch proposal,
-            and accept only after BrowserPod produces proof.
+            Prompt → generate patch → BrowserPod run → proof report
           </p>
         </div>
         <div className="status-row">
-          <span className="badge ok">Human approval required</span>
-          <span className="badge info">Server-side provider keys</span>
-          <span className={`badge ${proof.crossOriginIsolated ? "ok" : "warn"}`}>
-            crossOriginIsolated={String(proof.crossOriginIsolated ?? "loading")}
-          </span>
+          <Link href="/arena" className="button">
+            Open Arena
+          </Link>
+          <Link href="/arena-live" className="button">
+            Open Arena Live
+          </Link>
+          <Link href="/sandbox-test" className="button">
+            Open Smoke Test
+          </Link>
         </div>
       </header>
 

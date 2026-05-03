@@ -172,10 +172,10 @@ export default function ArenaPage() {
               <span>GitHub connector</span>
               <strong>
                 {issueSourceStatus === "github"
-                  ? "Live repo issues"
+                  ? "Sandbox issues loaded from demo repo"
                   : issueSourceStatus === "loading"
                     ? "Loading GitHub"
-                  : "Fallback catalog"}
+                  : "Fallback catalog (Preview)"}
               </strong>
             </div>
             <a

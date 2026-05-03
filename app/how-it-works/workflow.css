@@ -1,0 +1,83 @@
+/* --- Workflow Diagram --- */
+.workflow-diagram-container {
+  padding: 32px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface-container-low);
+  overflow-x: hidden;
+}
+
+.workflow-diagram {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+}
+
+@media (min-width: 900px) {
+  .workflow-diagram {
+    flex-direction: row;
+    justify-content: center;
+  }
+}
+
+.workflow-node {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  width: 130px;
+  padding: 16px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--surface);
+  position: relative;
+  z-index: 2;
+}
+
+.workflow-node.pod-glow {
+  border-color: rgba(0, 205, 255, 0.4);
+  box-shadow: 0 0 20px rgba(0, 205, 255, 0.1);
+  background: rgba(0, 205, 255, 0.04);
+}
+
+.workflow-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--surface-container-highest);
+  color: var(--on-surface);
+  font-size: 14px;
+  margin-bottom: 12px;
+}
+
+.workflow-node h4 {
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--on-surface);
+  line-height: 1.2;
+}
+
+.workflow-node span {
+  font-size: 10px;
+  color: var(--on-surface-variant);
+  font-family: var(--font-mono);
+  line-height: 1.4;
+}
+
+.workflow-line {
+  width: 2px;
+  height: 24px;
+  background: var(--border-elevated);
+}
+
+@media (min-width: 900px) {
+  .workflow-line {
+    width: 24px;
+    height: 2px;
+  }
+}

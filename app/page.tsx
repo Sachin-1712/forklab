@@ -7,27 +7,25 @@ export default function Home() {
       <section className="hero">
         <div className="hero-badge">
           <span style={{ fontSize: 14, color: "var(--on-surface-variant)" }}>⊘</span>
-          Built for AI in the Box · Powered by BrowserPod
+          Built for BrowserPod variants - LLM-assisted proof
         </div>
 
         <h1>
-          Parallel AI branches.
+          Prompt once.
           <br />
-          <span style={{ color: "var(--primary-container)" }}>Verified in browser sandboxes.</span>
+          <span style={{ color: "var(--primary-container)" }}>Run verified variants.</span>
         </h1>
 
         <p className="lead" style={{ fontSize: 16 }}>
-          ForkLab gives every AI coding branch its own disposable BrowserPod
-          sandbox, runs real tests, and compares verified fixes before you
-          accept them.
+          ForkLab lets AI generate code, then runs it inside BrowserPod before you trust it.
         </p>
 
         <div className="actions">
-          <Link href="/sprint" className="button primary">
-            ▶ Start Sample Sprint
+          <Link href="/arena-live" className="button primary">
+            Run Agent
           </Link>
-          <Link href="/how-it-works" className="button">
-            ⓘ See How It Works
+          <Link href="/arena" className="button">
+            View Issues Arena
           </Link>
         </div>
 
@@ -40,18 +38,18 @@ export default function Home() {
             </div>
             <div className="pod-card-header">
               <span className="pod-card-title">
-                <span style={{ fontSize: 14 }}>⌨</span> Pod A: Sidebar Fix
+                <span style={{ fontSize: 14 }}>⌨</span> Enterprise Trust
               </span>
               <span className="badge info">
                 <span style={{ width: 5, height: 5, borderRadius: "50%", background: "var(--secondary)", display: "inline-block", animation: "pulse-dot 2s infinite" }} />
-                Running tests
+                Generating
               </span>
             </div>
             <div className="pod-card-terminal">
               <div className="fade-out" />
-              <div style={{ opacity: 0.7 }}>&gt; npm run test:sidebar</div>
-              <div style={{ opacity: 0.7 }}>&gt; PASS src/components/Sidebar.test.tsx</div>
-              <div style={{ opacity: 0.7 }}>&gt; RUNS src/layout/MainLayout.test.tsx</div>
+              <div style={{ opacity: 0.7 }}>&gt; provider=gemini</div>
+              <div style={{ opacity: 0.7 }}>&gt; wrote public/index.html</div>
+              <div style={{ opacity: 0.7 }}>&gt; wrote public/styles.css</div>
             </div>
           </div>
 
@@ -62,19 +60,17 @@ export default function Home() {
             </div>
             <div className="pod-card-header">
               <span className="pod-card-title">
-                <span style={{ fontSize: 14 }}>◇</span> Pod B: CSV Export Fix
+                <span style={{ fontSize: 14 }}>◇</span> Startup Conversion
               </span>
               <span className="badge fail">
-                <span style={{ fontSize: 10 }}>⚙</span> Patching
+                <span style={{ fontSize: 10 }}>⚙</span> Installing
               </span>
             </div>
             <div className="pod-card-terminal">
               <div className="fade-out" />
-              <div style={{ color: "var(--error)", opacity: 0.8 }}>
-                &gt; TypeError: Cannot read properties of undefined (reading &apos;map&apos;)
-              </div>
-              <div style={{ opacity: 0.7 }}>&gt; AI Agent proposing fix...</div>
-              <div style={{ opacity: 0.7 }}>&gt; Applying patch v2</div>
+              <div style={{ opacity: 0.7 }}>&gt; boot BrowserPod</div>
+              <div style={{ opacity: 0.7 }}>&gt; npm install</div>
+              <div style={{ color: "var(--error)", opacity: 0.8 }}>&gt; waiting for Portal callback</div>
             </div>
           </div>
 
@@ -85,20 +81,20 @@ export default function Home() {
             </div>
             <div className="pod-card-header">
               <span className="pod-card-title" style={{ color: "var(--primary-container)" }}>
-                ✉ Pod C: Email Val Fix
+                ✉ Developer Minimal
               </span>
               <span className="badge ok">
-                ✓ Passed
+                ✓ Portal ready
               </span>
             </div>
             <div className="pod-card-terminal" style={{ overflow: "visible" }}>
               <div style={{ color: "var(--primary-container)", opacity: 0.9 }}>
-                &gt; 14 tests passed
+                &gt; FORKLAB_VARIANT_NONCE matched
               </div>
               <div style={{ color: "var(--primary-container)", opacity: 0.9 }}>
-                &gt; 0 vulnerabilities found
+                &gt; Express static server listening
               </div>
-              <div style={{ marginTop: 8 }}>&gt; Ready for merge</div>
+              <div style={{ marginTop: 8 }}>&gt; BrowserPod Portal captured</div>
               <button
                 className="button"
                 style={{
@@ -109,60 +105,56 @@ export default function Home() {
                 }}
                 type="button"
               >
-                Accept Fix
+                Open Portal
               </button>
             </div>
           </div>
         </div>
       </section>
 
-      {/* ── Why It Matters ─────────────────────────────────────── */}
+      {/* ── Demo Modes ─────────────────────────────────────── */}
       <section className="stack" style={{ marginTop: 48 }}>
         <h2 style={{ fontSize: 20, borderBottom: "1px solid var(--border)", paddingBottom: 16, display: "flex", alignItems: "center", gap: 8 }}>
-          <span style={{ color: "var(--primary-container)" }}>↔</span>
-          Why it matters
+          <span style={{ color: "var(--primary-container)" }}>⑂</span>
+          Final Demo Modes
         </h2>
         <div className="grid three">
-          {/* Legacy */}
-          <div className="feature-card legacy">
-            <p className="eyebrow" style={{ borderBottom: "1px solid var(--border-elevated)", paddingBottom: 8 }}>Legacy AI</p>
-            <h3 style={{ fontSize: 18 }}>One Answer</h3>
+          {/* Arena */}
+          <div className="feature-card">
+            <p className="eyebrow" style={{ borderBottom: "1px solid var(--border-elevated)", paddingBottom: 8, color: "var(--secondary)" }}>
+              Mode 1
+            </p>
+            <h3 style={{ fontSize: 18 }}>Arena</h3>
             <p style={{ color: "var(--on-surface-variant)", marginBottom: 0, fontSize: 13 }}>
-              Standard copilots generate a single block of code. You have to guess
-              if it works, copy it over, and manually run tests in your local
-              environment.
+              Select sandbox issues from a simulated GitHub repo and run parallel BrowserPod branches.
             </p>
           </div>
-          {/* ForkLab */}
-          <div className="feature-card" style={{ borderColor: "var(--border-elevated)", position: "relative" }}>
+          {/* Arena Live */}
+          <div className="feature-card highlight" style={{ borderColor: "var(--border-elevated)", position: "relative" }}>
             <div style={{
               position: "absolute", top: -10, left: 24,
               background: "var(--surface)", padding: "0 8px",
               color: "var(--on-surface-variant)", fontFamily: "var(--font-mono)",
               fontSize: 10, border: "1px solid var(--border-elevated)", borderRadius: "var(--radius)"
             }}>
-              ForkLab Approach
+              Primary Demo
             </div>
-            <p className="eyebrow" style={{ borderBottom: "1px solid var(--border-elevated)", paddingBottom: 8, color: "var(--secondary)" }}>
-              ⑂ Parallel Answers
+            <p className="eyebrow" style={{ borderBottom: "1px solid var(--border-elevated)", paddingBottom: 8, color: "var(--primary-container)" }}>
+              Mode 2
             </p>
-            <h3 style={{ fontSize: 18 }}>Multi-Agent Exploration</h3>
+            <h3 style={{ fontSize: 18 }}>Arena Live</h3>
             <p style={{ color: "var(--on-surface-variant)", marginBottom: 0, fontSize: 13 }}>
-              We spin up multiple agents in parallel. They explore different
-              architectural approaches to your prompt simultaneously, without
-              touching your local machine.
+              Prompt for frontend variants and run them directly in BrowserPod with immediate terminal and visual feedback.
             </p>
           </div>
-          {/* Proven */}
-          <div className="feature-card highlight">
-            <p className="eyebrow" style={{ borderBottom: "1px solid var(--border-elevated)", paddingBottom: 8, color: "var(--primary-container)" }}>
-              🛡 Proven Results
+          {/* Workbench */}
+          <div className="feature-card">
+            <p className="eyebrow" style={{ borderBottom: "1px solid var(--border-elevated)", paddingBottom: 8, color: "var(--secondary)" }}>
+              Mode 3
             </p>
-            <h3 style={{ fontSize: 18 }}>Verified Sandbox Fixes</h3>
+            <h3 style={{ fontSize: 18 }}>Workbench</h3>
             <p style={{ color: "var(--on-surface-variant)", marginBottom: 0, fontSize: 13 }}>
-              Every branch executes in an isolated BrowserPod. We run your test
-              suite against every proposed fix. You only review code that we
-              mathematically prove passes.
+              Enterprise agent workflow with proof. Shows the steps of prompting, generating, running, and verifying.
             </p>
           </div>
         </div>
@@ -198,9 +190,9 @@ export default function Home() {
                 <div>[SYS] Initiating Pod Isolation Sequence...</div>
                 <div>[SYS] Mounting virtual fs: /tmp/pod_env_a4f2</div>
                 <div>[NET] Restricting outbound traffic to whitelist</div>
-                <div style={{ color: "var(--secondary)", marginTop: 8 }}>&gt; Executing Agent Payload...</div>
-                <div>[SEC] ALERT: Attempted access to /etc/passwd denied</div>
-                <div style={{ color: "var(--error)" }}>&gt; Process terminated due to security violation.</div>
+                <div style={{ color: "var(--secondary)", marginTop: 8 }}>&gt; Writing generated variant files...</div>
+                <div>[SEC] Host filesystem unavailable to sandbox code</div>
+                <div style={{ color: "var(--primary-container)" }}>&gt; Nonce proof returned from BrowserPod.</div>
                 <div style={{ marginTop: 8 }}>[SYS] Shredding container instance a4f2...</div>
                 <div style={{ color: "var(--primary-container)", marginTop: 8 }}>[SYS] Host machine remains secure.</div>
               </div>

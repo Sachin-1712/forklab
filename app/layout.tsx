@@ -4,9 +4,9 @@ import { TopNav } from "@/components/TopNav";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "ForkLab — Parallel AI branches. Verified in browser sandboxes.",
+  title: "ForkLab — Prompt once. Run verified variants.",
   description:
-    "ForkLab gives every AI coding branch its own disposable BrowserPod sandbox, runs real tests, and compares verified fixes before you accept them.",
+    "ForkLab generates frontend variants, runs them in BrowserPod sandboxes, and shows terminal, proof, and Portal evidence before review.",
 };
 
 export default function RootLayout({

@@ -5,15 +5,11 @@ import { usePathname } from "next/navigation";
 
 const navItems = [
   { href: "/arena", label: "Arena" },
-  { href: "/arena-live", label: "Arena Live" },
-  { href: "/variant-arena", label: "Variant Arena" },
+  { href: "/arena-live", label: "Live" },
   { href: "/workbench", label: "Workbench" },
-  { href: "/try", label: "Try" },
-  { href: "/agent-lab", label: "Agent Lab" },
-  { href: "/sprint", label: "Dashboard" },
-  { href: "/sandbox-test", label: "Smoke Test" },
-  { href: "/how-it-works", label: "How It Works" },
+  { href: "/sandbox-test", label: "Smoke" },
   { href: "/settings", label: "Settings" },
+  { href: "/how-it-works", label: "How It Works" },
 ];
 
 export function TopNav() {
@@ -40,7 +36,7 @@ export function TopNav() {
           </Link>
         ))}
         <Link href="/arena-live" className="button primary nav-cta">
-          Launch Arena
+          Run Agent
         </Link>
       </div>
     </nav>

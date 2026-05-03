@@ -131,6 +131,10 @@ export default function ArenaLivePage() {
 
     return { generated, portals, failures };
   }, [cardList]);
+  const portalCards = useMemo(
+    () => cardList.filter((card) => Boolean(card.previewUrl)),
+    [cardList],
+  );
 
   function selectIssue(nextIssueId: string) {
     setIssueId(nextIssueId);
@@ -152,11 +156,22 @@ export default function ArenaLivePage() {
     });
   }
 
+  const abortControllerRef = useRef<AbortController | null>(null);
+
+  function stopRun() {
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    setIsRunning(false);
+    pushEvent("Run stopped by user", "Existing BrowserPod process may finish, but ForkLab stopped orchestration.", "warn");
+  }
+
   async function launchVariants() {
     setIsRunning(true);
     setError(null);
     setTimeline([]);
     pushEvent("Prompt submitted", task, "info");
+    abortControllerRef.current = new AbortController();
 
     const requestedIds = requestedArenaLiveIds(variantCount);
     setCards(
@@ -173,6 +188,7 @@ export default function ArenaLivePage() {
       const response = await fetch("/api/arena-live/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: abortControllerRef.current.signal,
         body: JSON.stringify({
           task,
           issueId,
@@ -214,9 +230,13 @@ export default function ArenaLivePage() {
           "ForkLab will attempt one BrowserPod instance per variant.",
           "info",
         );
-        await Promise.allSettled(liveVariants.map((variant) => runVariant(variant)));
+        await Promise.allSettled(liveVariants.map((variant) => {
+          if (abortControllerRef.current?.signal.aborted) return Promise.resolve();
+          return runVariant(variant);
+        }));
       } else {
         for (const variant of liveVariants) {
+          if (abortControllerRef.current?.signal.aborted) break;
           await runVariant(variant);
         }
       }
@@ -229,7 +249,8 @@ export default function ArenaLivePage() {
           });
         }
       }
-    } catch (caught) {
+    } catch (caught: any) {
+      if (caught.name === "AbortError") return;
       const userError = toUserFacingError(caught);
       setError(userError);
       pushEvent("Run failed", userError.message, "fail");
@@ -239,6 +260,7 @@ export default function ArenaLivePage() {
   }
 
   async function runVariant(variant: ArenaLiveVariant) {
+    if (abortControllerRef.current?.signal.aborted) return;
     const nonce = makeNonce();
     const folder = arenaLiveFolder(variant.id);
     const port = arenaLivePortById[variant.id];
@@ -621,6 +643,73 @@ export default function ArenaLivePage() {
               ))}
             </div>
           </section>
+
+          <section className="truth-panel compact-panel">
+            <div>
+              <p className="eyebrow">BrowserPod proof</p>
+              <h2>Runtime evidence</h2>
+            </div>
+            <div className="truth-list">
+              <TruthRow
+                label="Real"
+                text={`crossOriginIsolated: ${isIsolated}`}
+              />
+              <TruthRow
+                label="Real"
+                text={`Command executed: ${cardList.find((card) => card.proofCommand)?.proofCommand ?? "pending"}`}
+              />
+              <TruthRow
+                label="Real"
+                text={`Files written: ${cardList.flatMap((card) => card.filesWritten).length}`}
+              />
+              <TruthRow
+                label="Real"
+                text={`Nonce generated: ${cardList.find((card) => card.nonce)?.nonce ?? "pending"}`}
+              />
+              <TruthRow
+                label="Real"
+                text={`Nonce returned: ${cardList.find((card) => card.nonceReturned)?.nonceReturned ?? "pending"}`}
+              />
+              <TruthRow
+                label="Real"
+                text={`Portal captured: ${cardList.some((card) => card.portalCaptured) ? "yes" : "pending"}`}
+              />
+              <TruthRow
+                label="Planned"
+                text="GitHub MCP import, ZIP upload, repo-wide parsing, and production PR creation are not connected in this route."
+              />
+            </div>
+          </section>
+
+          <section className="truth-panel compact-panel portal-summary">
+            <div>
+              <p className="eyebrow">BrowserPod Portal links</p>
+              <h2>Live URLs</h2>
+            </div>
+            {portalCards.length ? (
+              <div className="portal-summary-grid">
+                {portalCards.map((card) => (
+                  <a
+                    className="portal-summary-link"
+                    href={card.previewUrl}
+                    key={card.id}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <span>{card.title}</span>
+                    <strong>{card.previewUrl}</strong>
+                    <small>
+                      {card.runtime} - port {arenaLivePortById[card.id]}
+                    </small>
+                  </a>
+                ))}
+              </div>
+            ) : (
+              <div className="run-empty-state">
+                BrowserPod Portal links appear after onPortal reports a URL.
+              </div>
+            )}
+          </section>
         </aside>
 
         <main className="arena-live-main stack">
@@ -648,33 +737,9 @@ export default function ArenaLivePage() {
               <button className="button" type="button" onClick={() => setModal("mcp")}>
                 Add MCP
               </button>
-              <button
-                className="button"
-                type="button"
-                onClick={() => {
-                  setModal("connectors");
-                  setConnectorMessage(
-                    "GitHub MCP is planned. This route uses a built-in sandbox repo with issue/task metadata. In production, GitHub MCP would import repo files, issues, and PR context.",
-                  );
-                }}
-              >
-                Add connectors
-              </button>
               <button className="button" type="button" onClick={() => setModal("skills")}>
                 Add skills.md
               </button>
-              <label>
-                <span>Variant count</span>
-                <select
-                  value={variantCount}
-                  onChange={(event) => setVariantCount(Number(event.target.value))}
-                  disabled={isRunning}
-                >
-                  <option value={1}>1</option>
-                  <option value={2}>2</option>
-                  <option value={3}>3</option>
-                </select>
-              </label>
               <label>
                 <span>Provider</span>
                 <select
@@ -710,15 +775,28 @@ export default function ArenaLivePage() {
                 />{" "}
                 Run variants in parallel
               </label>
-              <button
-                className="button primary"
-                disabled={isRunning || !task.trim()}
-                onClick={launchVariants}
-                type="button"
-              >
-                Launch variants
-              </button>
+              {isRunning ? (
+                <button
+                  className="button destructive outline"
+                  onClick={() => stopRun()}
+                  type="button"
+                >
+                  Stop Run
+                </button>
+              ) : (
+                <button
+                  className="button primary"
+                  disabled={!task.trim()}
+                  onClick={launchVariants}
+                  type="button"
+                >
+                  Run Agent
+                </button>
+              )}
             </div>
+            <p className="prompt-helper">
+              Describe the feature, audience, and constraints. ForkLab will generate implementation branches and verify them in BrowserPod.
+            </p>
           </section>
 
           <section className="run-summary-grid">
@@ -731,137 +809,114 @@ export default function ArenaLivePage() {
             <MetricCard label="Failures" value={String(summary.failures)} />
           </section>
 
-          <section className="arena-live-cards">
-            {requestedArenaLiveIds(variantCount).map((id) => {
-              const card = cards[id] ?? createQueuedCard(id, queuedProvider(provider));
-              const isExpanded = expanded.has(id);
-              return (
-                <article className="arena-live-card" key={id}>
-                  <div className="arena-live-card-head">
-                    <div>
-                      <div className="status-row">
-                        <span className={`badge ${statusTone(card.status)}`}>
-                          {card.status}
-                        </span>
-                        <span className="badge info">{card.provider}</span>
-                        {card.isFallback ? (
-                          <span className="badge warn">fallback</span>
-                        ) : null}
-                      </div>
-                      <h3>{card.title}</h3>
-                      <p>{card.strategy}</p>
-                    </div>
-                    <button
-                      className="button"
-                      type="button"
-                      onClick={() => toggleExpanded(id)}
-                    >
-                      {isExpanded ? "Collapse" : "Expand"}
-                    </button>
-                  </div>
-
-                  <div className="arena-card-facts">
-                    <Fact label="Audience" value={card.audience} />
-                    <Fact label="Runtime" value={card.runtime} />
-                    <Fact label="Files" value={card.filesWritten.length ? `${card.filesWritten.length} written` : "waiting"} />
-                    <Fact
-                      label="Nonce proof"
-                      value={
-                        card.nonceReturned && card.nonceReturned === card.nonce
-                          ? "verified"
-                          : card.nonce
-                            ? "pending"
-                            : "not started"
-                      }
-                    />
-                  </div>
-
-                  {card.previewUrl ? (
-                    <a
-                      className="preview-link"
-                      href={card.previewUrl}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      Open BrowserPod Portal
-                    </a>
-                  ) : null}
-
-                  <p className="muted-copy">{card.note}</p>
-
-                  {isExpanded ? (
-                    <div className="arena-card-expanded">
-                      <div className="arena-card-terminal">
-                        <div
-                          className="terminal-native compact"
-                          ref={(node) => {
-                            terminalRefs.current[id] = node;
-                          }}
-                        />
-                        <pre>{card.logs.join("\n")}</pre>
-                      </div>
-                      <div className="arena-file-preview">
-                        <div>
-                          <span className="badge info">public/index.html</span>
-                          <pre>
-                            {fileContent(card.files, "public/index.html") ||
-                              "Waiting for generated HTML."}
-                          </pre>
+          {Object.keys(cards).length === 0 ? (
+            <section className="card stack">
+              <div>
+                <p className="eyebrow">Run plan</p>
+                <h2>Waiting for prompt</h2>
+              </div>
+              <p className="muted-copy">Planned branches:</p>
+              <ul>
+                <li>Enterprise Trust</li>
+                <li>Startup Conversion</li>
+                <li>Developer Minimal</li>
+              </ul>
+            </section>
+          ) : (
+            <section className="arena-live-cards">
+              {requestedArenaLiveIds(variantCount).map((id) => {
+                const card = cards[id] ?? createQueuedCard(id, queuedProvider(provider));
+                const isExpanded = expanded.has(id);
+                return (
+                  <article className="arena-live-card" key={id}>
+                    <div className="arena-live-card-head">
+                      <div>
+                        <div className="status-row">
+                          <span className={`badge ${statusTone(card.status)}`}>
+                            {card.status}
+                          </span>
+                          <span className="badge info">{card.provider}</span>
+                          {card.isFallback ? (
+                            <span className="badge warn">fallback</span>
+                          ) : null}
                         </div>
-                        <div>
-                          <span className="badge info">public/styles.css</span>
-                          <pre>
-                            {fileContent(card.files, "public/styles.css") ||
-                              "Waiting for generated CSS."}
-                          </pre>
+                        <h3>{card.title}</h3>
+                        <p>{card.strategy}</p>
+                      </div>
+                      <button
+                        className="button"
+                        type="button"
+                        onClick={() => toggleExpanded(id)}
+                      >
+                        {isExpanded ? "Collapse" : "Expand"}
+                      </button>
+                    </div>
+
+                    <div className="arena-card-facts">
+                      <Fact label="Audience" value={card.audience} />
+                      <Fact label="Runtime" value={card.runtime} />
+                      <Fact label="Files" value={card.filesWritten.length ? `${card.filesWritten.length} written` : "waiting"} />
+                      <Fact
+                        label="Nonce proof"
+                        value={
+                          card.nonceReturned && card.nonceReturned === card.nonce
+                            ? "verified"
+                            : card.nonce
+                              ? "pending"
+                              : "not started"
+                        }
+                      />
+                    </div>
+
+                    {card.previewUrl ? (
+                      <a
+                        className="preview-link"
+                        href={card.previewUrl}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        Open BrowserPod Portal
+                      </a>
+                    ) : null}
+
+                    <p className="muted-copy">{card.note}</p>
+
+                    {isExpanded ? (
+                      <div className="arena-card-expanded">
+                        <div className="arena-card-terminal">
+                          <div
+                            className="terminal-native compact"
+                            ref={(node) => {
+                              terminalRefs.current[id] = node;
+                            }}
+                          />
+                          <pre>{card.logs.join("\n")}</pre>
+                        </div>
+                        <div className="arena-file-preview">
+                          <div>
+                            <span className="badge info">public/index.html</span>
+                            <pre>
+                              {fileContent(card.files, "public/index.html") ||
+                                "Waiting for generated HTML."}
+                            </pre>
+                          </div>
+                          <div>
+                            <span className="badge info">public/styles.css</span>
+                            <pre>
+                              {fileContent(card.files, "public/styles.css") ||
+                                "Waiting for generated CSS."}
+                            </pre>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  ) : null}
-                </article>
-              );
-            })}
-          </section>
+                    ) : null}
+                  </article>
+                );
+              })}
+            </section>
+          )}
+
         </main>
-      </section>
-
-      <section className="arena-live-bottom-grid">
-        <section className="truth-panel">
-          <div>
-            <p className="eyebrow">BrowserPod proof</p>
-            <h2>Runtime evidence</h2>
-          </div>
-          <div className="truth-list">
-            <TruthRow
-              label="Real"
-              text={`crossOriginIsolated: ${isIsolated}`}
-            />
-            <TruthRow
-              label="Real"
-              text={`Command executed: ${cardList.find((card) => card.proofCommand)?.proofCommand ?? "pending"}`}
-            />
-            <TruthRow
-              label="Real"
-              text={`Files written: ${cardList.flatMap((card) => card.filesWritten).length}`}
-            />
-            <TruthRow
-              label="Real"
-              text={`Nonce generated: ${cardList.find((card) => card.nonce)?.nonce ?? "pending"}`}
-            />
-            <TruthRow
-              label="Real"
-              text={`Nonce returned: ${cardList.find((card) => card.nonceReturned)?.nonceReturned ?? "pending"}`}
-            />
-            <TruthRow
-              label="Real"
-              text={`Portal captured: ${cardList.some((card) => card.portalCaptured) ? "yes" : "pending"}`}
-            />
-            <TruthRow
-              label="Planned"
-              text="GitHub MCP import, ZIP upload, repo-wide parsing, and production PR creation are not connected in this route."
-            />
-          </div>
-        </section>
       </section>
 
       {mounted && modal
