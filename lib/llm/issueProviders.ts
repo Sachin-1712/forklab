@@ -1,13 +1,15 @@
 import {
+  canFallbackForIssue,
   createIssueFallbackPatch,
   issuePatchJsonSchema,
   parseJsonish,
   validateIssuePatchProposal,
+  type IssueContext,
   type IssuePatchPlanInput,
   type IssuePatchProposal,
 } from "./issueSchema";
 import { getProviderConfig } from "./providers";
-import { getSandboxIssue } from "../sandboxIssues";
+import { sandboxIssueNumberFromBranchId, type SandboxIssue } from "../sandboxIssues";
 
 export async function planIssuePatch(
   input: IssuePatchPlanInput,
@@ -15,13 +17,28 @@ export async function planIssuePatch(
   const attemptNumber = input.previousAttempt?.attemptNumber
     ? input.previousAttempt.attemptNumber + 1
     : 1;
+  const issueNumber = sandboxIssueNumberFromBranchId(input.issue.id);
+  const canFallback = issueNumber !== null && canFallbackForIssue(issueNumber);
 
-  if (input.issueId === "issue-1" && attemptNumber === 1) {
-    return createIssueFallbackPatch(input.issueId, input.sourceContent, attemptNumber);
+  if (input.issue.number === 1 && attemptNumber === 1 && canFallback) {
+    return createIssueFallbackPatch(
+      contextToSandboxIssue(input.issue),
+      input.sourceContent,
+      attemptNumber,
+    );
   }
 
   if (input.provider === "fallback") {
-    return createIssueFallbackPatch(input.issueId, input.sourceContent, attemptNumber);
+    if (!canFallback) {
+      throw new Error(
+        `No deterministic fallback exists for issue #${input.issue.number}.`,
+      );
+    }
+    return createIssueFallbackPatch(
+      contextToSandboxIssue(input.issue),
+      input.sourceContent,
+      attemptNumber,
+    );
   }
 
   if (input.provider === "gemini") return planIssueWithGemini(input);
@@ -33,14 +50,36 @@ export async function planIssuePatch(
     try {
       return await planIssueWithGroq(input);
     } catch {
+      if (!canFallback) {
+        throw new Error(
+          `LLM unavailable and no fallback exists for issue #${input.issue.number}: ${errorMessage(geminiError)}.`,
+        );
+      }
       return {
-        ...createIssueFallbackPatch(input.issueId, input.sourceContent, attemptNumber),
+        ...createIssueFallbackPatch(
+          contextToSandboxIssue(input.issue),
+          input.sourceContent,
+          attemptNumber,
+        ),
         diagnosis: `LLM unavailable. Gemini failed: ${errorMessage(
           geminiError,
         )}. ForkLab used the built-in sandbox patch.`,
       };
     }
   }
+}
+
+function contextToSandboxIssue(issue: IssueContext): SandboxIssue {
+  return {
+    id: issue.id,
+    number: issue.number,
+    title: issue.title,
+    body: issue.body,
+    summary: issue.body.split(/\r?\n/)[0] || issue.title,
+    labels: [],
+    risk: "Low",
+    targetFile: issue.targetFile,
+  };
 }
 
 async function planIssueWithGemini(
@@ -82,7 +121,10 @@ async function planIssueWithGemini(
   const text = payload.candidates?.[0]?.content?.parts?.[0]?.text;
   if (!text) throw new Error("Gemini returned empty issue patch response.");
 
-  return validateIssuePatchProposal(parseJsonish(text), "gemini");
+  return validateIssuePatchProposal(parseJsonish(text), {
+    provider: "gemini",
+    issue: input.issue,
+  });
 }
 
 async function planIssueWithGroq(
@@ -131,7 +173,7 @@ async function groqIssuePatchRequest(
           {
             role: "system",
             content:
-              "Return only valid JSON. You propose safe full-file JavaScript replacements for small ES module files. Never return shell commands.",
+              "Return only valid JSON. You propose safe full-file JavaScript replacements for small ES module files and write a regression test for the same module. Never return shell commands.",
           },
           { role: "user", content: issuePatchPrompt(input, "groq") },
         ],
@@ -150,15 +192,19 @@ async function groqIssuePatchRequest(
   const content = payload.choices?.[0]?.message?.content;
   if (!content) throw new Error("Groq returned empty issue patch response.");
 
-  return validateIssuePatchProposal(parseJsonish(content), "groq");
+  return validateIssuePatchProposal(parseJsonish(content), {
+    provider: "groq",
+    issue: input.issue,
+  });
 }
 
 function issuePatchPrompt(
   input: IssuePatchPlanInput,
   provider: "gemini" | "groq",
 ) {
-  const issue = getSandboxIssue(input.issueId);
-  if (!issue) throw new Error("Unknown sandbox issue.");
+  const { issue } = input;
+  const fileName = issue.targetFile.split("/").pop() ?? issue.targetFile;
+  const testFile = `tests/test-${fileName}`;
   const retryBlock = input.previousAttempt
     ? `
 
@@ -192,9 +238,46 @@ Strict rules:
 - issueId must be "${issue.id}".
 - targetFile must be "${issue.targetFile}".
 - patchedContent must be the full replacement JavaScript file content.
+- testContent must be a complete Node ES module test file that imports from "../${issue.targetFile}", uses the helpers shown below, and writes its result to "/forklab-issue/test-result.json".
 - Keep the existing ES module export style.
-- Do not include shell commands, network calls, imports, markdown, or explanations inside patchedContent.
-- Use only plain ASCII in patchedContent.
+- Do not include shell commands, network calls, or markdown fences inside patchedContent or testContent.
+- Use only plain ASCII in patchedContent and testContent.
+
+Required structure of testContent (ES module, will be saved as ${testFile}):
+
+\`\`\`js
+import { writeFileSync } from "node:fs";
+import { /* exported symbol(s) you need */ } from "../${issue.targetFile}";
+
+const failures = [];
+
+function expectEqual(actual, expected) {
+  if (actual !== expected) {
+    throw new Error(\`expected \${expected}, received \${actual}\`);
+  }
+}
+
+function check(name, fn) {
+  try {
+    fn();
+    console.log("PASS", name);
+  } catch (error) {
+    console.error("FAIL", name);
+    console.error(error.message);
+    failures.push({ name, message: error.message });
+  }
+}
+
+// add check(...) calls that exercise the exact behavior described in the issue body
+
+if (failures.length) {
+  writeFileSync("/forklab-issue/test-result.json", JSON.stringify({ status: "failed", failures }, null, 2));
+  process.exit(1);
+}
+
+writeFileSync("/forklab-issue/test-result.json", JSON.stringify({ status: "passed", failures: [] }, null, 2));
+console.log("Sandbox GitHub issue checks passed.");
+\`\`\`
 
 Source file fetched from GitHub (${issue.targetFile}):
 \`\`\`js

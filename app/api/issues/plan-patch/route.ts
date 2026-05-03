@@ -9,7 +9,9 @@ export const dynamic = "force-dynamic";
 export async function POST(request: Request) {
   try {
     const input = validateIssuePatchPlanInput(await request.json());
-    const proposal = validateIssuePatchProposal(await planIssuePatch(input));
+    const proposal = validateIssuePatchProposal(await planIssuePatch(input), {
+      issue: input.issue,
+    });
     return Response.json(proposal);
   } catch (error) {
     return Response.json(
