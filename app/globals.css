@@ -1294,6 +1294,77 @@ h3 {
   max-height: 300px;
 }
 
+/* --- Enterprise Workbench -------------------------------------------- */
+.workbench-shell {
+  width: min(1480px, calc(100vw - 32px));
+  margin-left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  gap: 16px;
+}
+
+.workbench-hero {
+  display: flex;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 16px;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 20px;
+  background: linear-gradient(135deg, rgba(0,205,255,0.08), var(--surface) 48%);
+}
+
+.workbench-hero > div:first-child {
+  min-width: 0;
+  max-width: 740px;
+}
+
+.workbench-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 0.72fr) minmax(0, 1.35fr) minmax(300px, 0.8fr);
+  gap: 12px;
+  align-items: start;
+}
+
+.workbench-sidebar,
+.workbench-main,
+.workbench-proof {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+
+.workbench-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+
+.workbench-proof-block {
+  margin: 0;
+  overflow: auto;
+  max-height: 220px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: #050505;
+  color: var(--on-surface-variant);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 18px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.timeline-step p {
+  margin: 2px 0 0;
+  color: var(--on-surface-variant);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 /* --- Responsive ------------------------------------------------------- */
 @media (max-width: 880px) {
   .hero h1 { font-size: 28px; }
@@ -1302,6 +1373,7 @@ h3 {
   .command-layout, .truth-grid,
   .agent-grid, .run-dashboard-grid, .run-branch-grid,
   .branch-workspace-grid, .agent-lab-grid,
+  .workbench-layout, .workbench-grid,
   .agent-step-controls, .agent-model-grid,
   .agent-proposal-grid { grid-template-columns: 1fr; }
   .command-sidebar,
@@ -1312,7 +1384,8 @@ h3 {
   .command-center,
   .run-shell,
   .branch-shell,
-  .agent-lab-shell {
+  .agent-lab-shell,
+  .workbench-shell {
     width: 100%;
     margin-left: 0;
     transform: none;
@@ -1321,7 +1394,8 @@ h3 {
   .run-hero,
   .run-prompt-panel,
   .agent-lab-hero,
-  .agent-provider-panel { flex-direction: column; }
+  .agent-provider-panel,
+  .workbench-hero { flex-direction: column; }
 }
 @media (max-width: 520px) {
   .main-content { width: calc(100% - 16px); }

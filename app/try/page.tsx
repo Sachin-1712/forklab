@@ -79,7 +79,7 @@ const variantBranches = [
 ] as const;
 
 const defaultPrompt =
-  "Fix the CSV export bug and compare it against queued Sidebar and Email Validation branches.";
+  "Fix the tenant access-control bug and compare it against CSV and queued UI branches.";
 
 export default function TryPage() {
   const router = useRouter();
@@ -111,7 +111,7 @@ export default function TryPage() {
         { role: "User", text: prompt || defaultPrompt },
         {
           role: "ForkLab",
-          text: "Launching Sprint Arena. One live BrowserPod branch will run now; queued branches show the parallel expansion path.",
+          text: "Launching Sprint Arena. The SEC-101 access-control branch can run through /workbench; CSV remains a live deterministic proof branch.",
         },
       ];
     }
@@ -189,6 +189,9 @@ export default function TryPage() {
           </Link>
           <Link href="/sprint" className="button">
             Open Live Sprint Proof
+          </Link>
+          <Link href="/workbench" className="button">
+            Open Workbench
           </Link>
         </div>
       </header>
@@ -280,7 +283,7 @@ export default function TryPage() {
 
           <div className="status-row">
             <span className="badge ok">BrowserPod proof layer</span>
-            <span className="badge info">No real AI calls yet</span>
+            <span className="badge info">Workbench LLM path</span>
             <span className="badge warn">Safe demo mode</span>
           </div>
 
@@ -315,7 +318,7 @@ export default function TryPage() {
               </button>
             </div>
             <p className="prompt-helper">
-              For this demo, Sprint Arena routes to the live BrowserPod proof path.
+              Sprint Arena opens dashboard branches; SEC-101 routes to the live workbench proof path.
             </p>
           </div>
         </section>
@@ -380,6 +383,20 @@ function SprintDashboard({
   return (
     <div className="agent-grid">
       <AgentRunCard
+        agent="Access-Control Fix"
+        strategy="Run SEC-101 through /workbench: failing tenant test, LLM/fallback patch proposal, human approval, BrowserPod verification."
+        sandboxStatus={launched ? "Live workbench route ready" : "Ready to launch"}
+        verificationStatus="Verified only after /workbench passes"
+        terminal={`$ node tests/test-access-control.js
+FAIL cross-tenant admin access
+$ request constrained patch
+$ human approval required`}
+        risk="Low"
+        files="src/accessControl.js"
+        badge="Live Workbench"
+        tone="info"
+      />
+      <AgentRunCard
         agent="CSV Export Fix"
         strategy="Run the known CSV filename bug inside BrowserPod, apply deterministic patch, rerun proof."
         sandboxStatus={launched ? "Live BrowserPod route ready" : "Ready to launch"}
@@ -398,15 +415,18 @@ PASS all checks`}
       />
       <AgentRunCard
         agent="Sidebar Toggle Fix"
-        strategy="Mobile route-change state repair."
-        sandboxStatus="Queued / next branch"
-        verificationStatus="Not verified yet"
+        strategy="Run a frontend reducer in BrowserPod, prove route navigation leaves the sidebar open, then apply a deterministic patch."
+        sandboxStatus={launched ? "Live branch route ready" : "Ready to launch"}
+        verificationStatus="Verified only after branch BrowserPod proof passes"
         terminal={`$ npm run test:sidebar
-queued for next BrowserPod branch`}
-        risk="Unknown"
-        files="src/components/sidebar.tsx"
-        badge="Queued"
-        tone="warn"
+FAIL route change closes sidebar
+$ node applyPatch.js
+$ npm run test:sidebar
+PASS all checks`}
+        risk="Low"
+        files="src/sidebarState.js"
+        badge="Live BrowserPod"
+        tone="info"
       />
       <AgentRunCard
         agent="Email Validation Fix"

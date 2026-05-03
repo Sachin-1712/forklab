@@ -1,6 +1,7 @@
 "use client";
 
 export type BranchId =
+  | "access-control-fix"
   | "csv-export-fix"
   | "email-validation-fix"
   | "sidebar-toggle-fix";
@@ -11,6 +12,9 @@ export type RunEventType =
   | "branch.booting"
   | "branch.files_written"
   | "branch.test_failed"
+  | "branch.llm_patch_proposed"
+  | "branch.awaiting_human_approval"
+  | "branch.human_approved"
   | "branch.patch_applied"
   | "branch.test_passed"
   | "branch.verified"
@@ -66,6 +70,14 @@ export function createRunId() {
 export function createBranchList(): BranchDefinition[] {
   return [
     {
+      id: "access-control-fix",
+      title: "Access-Control Fix",
+      description:
+        "Live SEC-101 branch for the tenant invoice access-control bug. Verification runs through /workbench.",
+      risk: "Low",
+      mode: "live",
+    },
+    {
       id: "csv-export-fix",
       title: "CSV Export Fix",
       description:
@@ -85,9 +97,9 @@ export function createBranchList(): BranchDefinition[] {
       id: "sidebar-toggle-fix",
       title: "Sidebar Toggle Fix",
       description:
-        "Queued workspace for mobile navigation state repair. Planned, not verified.",
-      risk: "Unknown",
-      mode: "queued",
+        "Live BrowserPod branch for mobile route-change sidebar state repair.",
+      risk: "Low",
+      mode: "live",
     },
   ];
 }
@@ -110,15 +122,29 @@ export function createRunSnapshot({
     updatedAt: now,
     branches: createBranchList().map((branch) => ({
       ...branch,
-      status: branch.id === "csv-export-fix" ? "Ready" : "Queued",
-      progress: branch.id === "csv-export-fix" ? 8 : 4,
+      status:
+        branch.mode === "live"
+          ? "Ready"
+          : "Queued",
+      progress:
+        branch.mode === "live"
+          ? 8
+          : 4,
       detail:
-        branch.id === "csv-export-fix"
-          ? "Ready to open the live proof path."
+        branch.id === "access-control-fix"
+          ? "Ready to launch the live SEC-101 workbench proof."
+          : branch.id === "csv-export-fix"
+            ? "Ready to open the live CSV proof path."
+          : branch.id === "sidebar-toggle-fix"
+            ? "Ready to run the live sidebar BrowserPod proof."
           : "Waiting for the next real BrowserPod branch.",
       terminal: [
-        branch.id === "csv-export-fix"
-          ? "$ waiting for CSV BrowserPod proof"
+        branch.id === "access-control-fix"
+          ? "$ waiting for SEC-101 BrowserPod proof"
+          : branch.id === "csv-export-fix"
+            ? "$ waiting for CSV BrowserPod proof"
+          : branch.id === "sidebar-toggle-fix"
+            ? "$ waiting for Sidebar BrowserPod proof"
           : "$ queued for next BrowserPod branch",
       ],
       updatedAt: now,
@@ -134,7 +160,7 @@ export function publishRunEvent(runId: string, event: RunEvent) {
     loadRunSnapshot(runId) ??
       createRunSnapshot({
         runId,
-        prompt: "Fix the CSV export bug and compare queued branches.",
+        prompt: "Fix the tenant access-control bug and compare queued branches.",
       }),
     stampedEvent,
   );
@@ -215,7 +241,10 @@ function updateBranch(branch: BranchSnapshot, event: RunEventMessage) {
     "branch.booting": Math.max(branch.progress, 30),
     "branch.files_written": Math.max(branch.progress, 48),
     "branch.test_failed": Math.max(branch.progress, 64),
-    "branch.patch_applied": Math.max(branch.progress, 78),
+    "branch.llm_patch_proposed": Math.max(branch.progress, 70),
+    "branch.awaiting_human_approval": Math.max(branch.progress, 74),
+    "branch.human_approved": Math.max(branch.progress, 78),
+    "branch.patch_applied": Math.max(branch.progress, 84),
     "branch.test_passed": Math.max(branch.progress, 92),
     "branch.verified": 100,
     "branch.queued": Math.max(branch.progress, 10),
@@ -241,6 +270,9 @@ function statusForEvent(type: RunEventType) {
   if (type === "branch.queued") return "Queued / next branch";
   if (type === "branch.test_passed") return "Tests passed";
   if (type === "branch.patch_applied") return "Patch applied";
+  if (type === "branch.human_approved") return "Human approved";
+  if (type === "branch.awaiting_human_approval") return "Awaiting approval";
+  if (type === "branch.llm_patch_proposed") return "Patch proposed";
   if (type === "branch.test_failed") return "Failing test observed";
   if (type === "branch.files_written") return "Files written";
   if (type === "branch.booting") return "Booting sandbox";

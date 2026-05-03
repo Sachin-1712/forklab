@@ -26,7 +26,7 @@ export default function RunDashboardPage() {
       loadRunSnapshot(runId) ??
       createRunSnapshot({
         runId,
-        prompt: "Fix the CSV export bug and compare queued branches.",
+        prompt: "Fix the tenant access-control bug and compare queued branches.",
       });
 
     setSnapshot(savedSnapshot);
@@ -86,8 +86,8 @@ export default function RunDashboardPage() {
           <p className="eyebrow">Live Agent Run</p>
           <h1>Live Agent Run</h1>
           <p className="muted-copy">
-            BroadcastChannel orchestration for parallel branch tabs. BrowserPod
-            proof remains real on the CSV sprint path.
+            BroadcastChannel orchestration for branch tabs. The SEC-101 branch
+            publishes real /workbench BrowserPod proof events as it progresses.
           </p>
         </div>
         <div className="run-id-panel">
@@ -122,6 +122,13 @@ export default function RunDashboardPage() {
         <button
           className="button"
           type="button"
+          onClick={() => openBranch("access-control-fix")}
+        >
+          Open Access branch
+        </button>
+        <button
+          className="button"
+          type="button"
           onClick={() => openBranch("csv-export-fix")}
         >
           Open CSV branch
@@ -142,6 +149,9 @@ export default function RunDashboardPage() {
         </button>
         <Link className="button" href="/sprint">
           Open /sprint proof
+        </Link>
+        <Link className="button" href="/workbench">
+          Open /workbench
         </Link>
       </section>
 
@@ -184,9 +194,10 @@ export default function RunDashboardPage() {
               <h2>Execution boundary</h2>
             </div>
             <div className="stack" style={{ gap: 8 }}>
+              <TruthRow label="Real" text="Access-Control branch launches the live /workbench BrowserPod proof." />
+              <TruthRow label="Real" text="Sidebar branch runs its own deterministic BrowserPod proof." />
               <TruthRow label="Real" text="CSV branch can launch the live /sprint BrowserPod proof." />
-              <TruthRow label="Preview" text="Email branch is prepared for the next real BrowserPod branch." />
-              <TruthRow label="Queued" text="Sidebar branch is planned and does not claim verification." />
+              <TruthRow label="Preview" text="Email branch is prepared for a future BrowserPod branch." />
             </div>
           </section>
         </aside>
