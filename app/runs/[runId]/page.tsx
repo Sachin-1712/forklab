@@ -76,44 +76,34 @@ export default function RunDashboardPage() {
       ).length,
     [branches],
   );
+  function openTabViaAnchor(href: string) {
+    const a = document.createElement("a");
+    a.href = href;
+    a.target = "_blank";
+    a.rel = "noopener";
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
+
   function openBranch(branchId: BranchId) {
     const href =
       (isSidebarArena && isSidebarArenaBranch(branchId)) ||
       (isSandboxIssues && isSandboxIssueBranch(branchId))
         ? `${branchPath(runId, branchId)}?autostart=1`
         : branchPath(runId, branchId);
-    const opened = window.open(href, "_blank");
-
-    if (!opened) {
-      setSnapshot((current) => {
-        if (!current) return current;
-        const nextSnapshot = { ...current, tabsBlocked: true };
-        saveRunSnapshot(runId, nextSnapshot);
-        return nextSnapshot;
-      });
-    }
+    openTabViaAnchor(href);
   }
 
   function openAllBranches() {
-    let blocked = false;
     branches.forEach((branch) => {
       const href =
         (isSidebarArena && isSidebarArenaBranch(branch.id)) ||
         (isSandboxIssues && isSandboxIssueBranch(branch.id))
           ? `${branchPath(runId, branch.id)}?autostart=1`
           : branchPath(runId, branch.id);
-      const opened = window.open(href, "_blank");
-      if (!opened) blocked = true;
+      openTabViaAnchor(href);
     });
-
-    if (blocked) {
-      setSnapshot((current) => {
-        if (!current) return current;
-        const nextSnapshot = { ...current, tabsBlocked: true };
-        saveRunSnapshot(runId, nextSnapshot);
-        return nextSnapshot;
-      });
-    }
   }
 
   return (

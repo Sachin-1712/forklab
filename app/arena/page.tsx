@@ -94,17 +94,6 @@ export default function ArenaPage() {
     const runId = createRunId();
     const branches = createSandboxIssueBranchList(selectedIssues);
 
-    // Open all tabs synchronously within the click handler before any async
-    // work — browsers block window.open() once the user gesture is consumed.
-    let tabsBlocked = false;
-    branches.forEach((branch) => {
-      const opened = window.open(
-        `${branchPath(runId, branch.id)}?autostart=1`,
-        `forklab-branch-${branch.id}`,
-      );
-      if (!opened) tabsBlocked = true;
-    });
-
     try {
       localStorage.setItem(
         `forklab:run:${runId}:issues`,
@@ -131,14 +120,17 @@ export default function ArenaPage() {
       terminalLine: "$ run.created sandbox-github-issues",
     });
 
-    if (tabsBlocked) {
-      publishRunEvent(runId, {
-        type: "branch.failed",
-        message:
-          "One or more branch tabs were blocked. Allow popups for this site and try again.",
-        terminalLine: "$ popup blocked for one or more branches",
-      });
-    }
+    // Use <a> click instead of window.open — browsers allow anchor clicks
+    // within a user gesture on deployed HTTPS sites where window.open is blocked.
+    branches.forEach((branch) => {
+      const a = document.createElement("a");
+      a.href = `${branchPath(runId, branch.id)}?autostart=1`;
+      a.target = "_blank";
+      a.rel = "noopener";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+    });
 
     router.push(runPath(runId));
   }
