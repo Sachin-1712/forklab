@@ -54,10 +54,9 @@ async function withFallback(
   try {
     return await request();
   } catch (error) {
-    return fallbackResponse(
-      input,
-      `${providerName} generation failed validation or request: ${errorMessage(error)}.`,
-    );
+    const reason = errorMessage(error);
+    console.error(`[ArenaLive] ${providerName} failed, using fallback. Reason: ${reason}`);
+    return fallbackResponse(input, `${providerName} failed: ${reason}`);
   }
 }
 
