@@ -91,8 +91,8 @@ export default function ArenaLivePage() {
   const [task, setTask] = useState(arenaLiveDefaultTask);
   const [variantCount, setVariantCount] = useState(3);
   const [provider, setProvider] = useState<ArenaLiveProvider>("gemini");
-  const [safeMode, setSafeMode] = useState(true);
-  const [parallelMode, setParallelMode] = useState(false);
+  const [safeMode, setSafeMode] = useState(false);
+  const [parallelMode, setParallelMode] = useState(true);
   const [modal, setModal] = useState<ModalType>(null);
   const [mounted, setMounted] = useState(false);
   const [isIsolated, setIsIsolated] = useState<string>("pending");
@@ -479,7 +479,7 @@ export default function ArenaLivePage() {
         | { kind: "failed"; runError: unknown }
       >
     > = [
-      waitForPortal(port, 16000).then((portal) =>
+      waitForPortal(port, 40000).then((portal) =>
         portal ? { kind: "portal", portal } : { kind: "timeout" },
       ),
     ];
