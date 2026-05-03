@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const navItems = [
+  { href: "/arena", label: "Arena" },
   { href: "/workbench", label: "Workbench" },
   { href: "/try", label: "Try" },
   { href: "/agent-lab", label: "Proof Lab" },
@@ -36,8 +37,8 @@ export function TopNav() {
             {item.label}
           </Link>
         ))}
-        <Link href="/workbench" className="button primary nav-cta">
-          Launch Run
+        <Link href="/arena" className="button primary nav-cta">
+          Launch Arena
         </Link>
       </div>
     </nav>

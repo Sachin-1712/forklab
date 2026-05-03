@@ -4,7 +4,10 @@ export type BranchId =
   | "access-control-fix"
   | "csv-export-fix"
   | "email-validation-fix"
-  | "sidebar-toggle-fix";
+  | "sidebar-toggle-fix"
+  | "sidebar-minimal-fix"
+  | "sidebar-robust-fix"
+  | "sidebar-ux-polish";
 
 export type RunEventType =
   | "run.created"
@@ -51,14 +54,51 @@ export type RunEventMessage = RunEvent & {
   createdAt: number;
 };
 
+export type ArenaPatchRecord = {
+  branchId: BranchId;
+  provider: "gemini" | "groq" | "fallback";
+  diagnosis: string;
+  summary: string;
+  patchedContent: string;
+  isFallback: boolean;
+  testsPassed: boolean;
+  failingTestCount: number;
+  recordedAt: number;
+};
+
+export type ArenaJudgeBranch = {
+  branchId: BranchId;
+  score: {
+    correctness: number;
+    maintainability: number;
+    risk: number;
+    ux: number;
+    overall: number;
+  };
+  reasoning: string;
+};
+
+export type ArenaJudgeRecord = {
+  provider: "gemini" | "groq" | "fallback";
+  winnerBranchId: BranchId;
+  winnerReason: string;
+  branches: ArenaJudgeBranch[];
+  isFallback: boolean;
+  recordedAt: number;
+};
+
 export type RunSnapshot = {
   runId: string;
   prompt: string;
+  mode?: "standard" | "sidebar-arena";
+  winnerBranchId?: BranchId;
   createdAt: number;
   updatedAt: number;
   branches: BranchSnapshot[];
   events: RunEventMessage[];
   tabsBlocked?: boolean;
+  arenaPatches?: ArenaPatchRecord[];
+  arenaJudge?: ArenaJudgeRecord;
 };
 
 const storagePrefix = "forklab:run:";
@@ -104,13 +144,48 @@ export function createBranchList(): BranchDefinition[] {
   ];
 }
 
+export function createSidebarArenaBranchList(): BranchDefinition[] {
+  return [
+    {
+      id: "sidebar-minimal-fix",
+      title: "Minimal Fix",
+      description:
+        "Conservative solution branch for the sidebar route-change bug.",
+      risk: "Low",
+      mode: "live",
+    },
+    {
+      id: "sidebar-robust-fix",
+      title: "Robust Fix",
+      description:
+        "Test-first solution branch with defensive reducer coverage.",
+      risk: "Low",
+      mode: "live",
+    },
+    {
+      id: "sidebar-ux-polish",
+      title: "UX Polish",
+      description:
+        "Product-minded solution branch that adds route-close UX metadata.",
+      risk: "Medium",
+      mode: "live",
+    },
+  ];
+}
+
 export function createRunSnapshot({
   runId,
   prompt,
+  branches = createBranchList(),
+  mode = "standard",
+  winnerBranchId,
   tabsBlocked,
 }: {
   runId: string;
   prompt: string;
+  branches?: BranchDefinition[];
+  mode?: RunSnapshot["mode"];
+  winnerBranchId?: BranchId;
   tabsBlocked?: boolean;
 }): RunSnapshot {
   const now = Date.now();
@@ -118,9 +193,11 @@ export function createRunSnapshot({
   return {
     runId,
     prompt,
+    mode,
+    winnerBranchId,
     createdAt: now,
     updatedAt: now,
-    branches: createBranchList().map((branch) => ({
+    branches: branches.map((branch) => ({
       ...branch,
       status:
         branch.mode === "live"
@@ -137,6 +214,8 @@ export function createRunSnapshot({
             ? "Ready to open the live CSV proof path."
           : branch.id === "sidebar-toggle-fix"
             ? "Ready to run the live sidebar BrowserPod proof."
+          : isSidebarArenaBranchId(branch.id)
+            ? "Ready to launch an isolated BrowserPod solution branch."
           : "Waiting for the next real BrowserPod branch.",
       terminal: [
         branch.id === "access-control-fix"
@@ -145,6 +224,8 @@ export function createRunSnapshot({
             ? "$ waiting for CSV BrowserPod proof"
           : branch.id === "sidebar-toggle-fix"
             ? "$ waiting for Sidebar BrowserPod proof"
+          : isSidebarArenaBranchId(branch.id)
+            ? `$ waiting for ${branch.title} BrowserPod`
           : "$ queued for next BrowserPod branch",
       ],
       updatedAt: now,
@@ -154,13 +235,88 @@ export function createRunSnapshot({
   };
 }
 
+export function recordArenaPatch(runId: string, record: ArenaPatchRecord) {
+  const snapshot =
+    loadRunSnapshot(runId) ??
+    createRunSnapshot({
+      runId,
+      prompt: "Fix the sidebar toggle bug with three solution branches.",
+      branches: createSidebarArenaBranchList(),
+      mode: "sidebar-arena",
+    });
+
+  const filtered = (snapshot.arenaPatches ?? []).filter(
+    (entry) => entry.branchId !== record.branchId,
+  );
+  const next: RunSnapshot = {
+    ...snapshot,
+    arenaPatches: [...filtered, record],
+    updatedAt: record.recordedAt,
+  };
+  saveRunSnapshot(runId, next);
+
+  if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+    const channel = new BroadcastChannel(channelName(runId));
+    channel.postMessage({ __forklab: "arena-patch", payload: record });
+    channel.close();
+  }
+}
+
+export function recordArenaJudge(runId: string, record: ArenaJudgeRecord) {
+  const snapshot = loadRunSnapshot(runId);
+  if (!snapshot) return;
+
+  const next: RunSnapshot = {
+    ...snapshot,
+    arenaJudge: record,
+    winnerBranchId: record.winnerBranchId,
+    updatedAt: record.recordedAt,
+  };
+  saveRunSnapshot(runId, next);
+
+  if (typeof window !== "undefined" && "BroadcastChannel" in window) {
+    const channel = new BroadcastChannel(channelName(runId));
+    channel.postMessage({ __forklab: "arena-judge", payload: record });
+    channel.close();
+  }
+}
+
+export function subscribeToArenaUpdates(
+  runId: string,
+  onPatch: (patch: ArenaPatchRecord) => void,
+  onJudge: (judge: ArenaJudgeRecord) => void,
+) {
+  if (typeof window === "undefined" || !("BroadcastChannel" in window)) {
+    return () => {};
+  }
+  const channel = new BroadcastChannel(channelName(runId));
+  channel.onmessage = (message) => {
+    const data = message.data as
+      | { __forklab?: "arena-patch"; payload?: ArenaPatchRecord }
+      | { __forklab?: "arena-judge"; payload?: ArenaJudgeRecord }
+      | RunEvent;
+    if (data && (data as { __forklab?: string }).__forklab === "arena-patch") {
+      onPatch((data as { payload: ArenaPatchRecord }).payload);
+    } else if (
+      data &&
+      (data as { __forklab?: string }).__forklab === "arena-judge"
+    ) {
+      onJudge((data as { payload: ArenaJudgeRecord }).payload);
+    }
+  };
+  return () => channel.close();
+}
+
 export function publishRunEvent(runId: string, event: RunEvent) {
   const stampedEvent = normalizeEvent(event);
   const snapshot = applyRunEvent(
     loadRunSnapshot(runId) ??
       createRunSnapshot({
         runId,
-        prompt: "Fix the tenant access-control bug and compare queued branches.",
+        prompt: "Fix the sidebar toggle bug with three solution branches.",
+        branches: createSidebarArenaBranchList(),
+        mode: "sidebar-arena",
+        winnerBranchId: "sidebar-robust-fix",
       }),
     stampedEvent,
   );
@@ -185,7 +341,9 @@ export function subscribeToRunEvents(
   const channel = new BroadcastChannel(channelName(runId));
 
   channel.onmessage = (message) => {
-    callback(normalizeEvent(message.data as RunEvent));
+    const data = message.data as RunEvent & { __forklab?: string };
+    if (data && data.__forklab) return;
+    callback(normalizeEvent(data as RunEvent));
   };
 
   return () => channel.close();
@@ -296,4 +454,12 @@ function channelName(runId: string) {
 
 function storageKey(runId: string) {
   return `${storagePrefix}${runId}`;
+}
+
+function isSidebarArenaBranchId(branchId: BranchId) {
+  return (
+    branchId === "sidebar-minimal-fix" ||
+    branchId === "sidebar-robust-fix" ||
+    branchId === "sidebar-ux-polish"
+  );
 }

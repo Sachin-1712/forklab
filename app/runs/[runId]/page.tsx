@@ -7,14 +7,18 @@ import {
   applyRunEvent,
   branchPath,
   createRunSnapshot,
+  createSidebarArenaBranchList,
   loadRunSnapshot,
-  publishRunEvent,
   saveRunSnapshot,
   subscribeToRunEvents,
   type BranchId,
   type BranchSnapshot,
   type RunSnapshot,
 } from "@/lib/runEvents";
+import {
+  isSidebarArenaBranch,
+  sidebarArenaVariants,
+} from "@/lib/sidebarArena";
 
 export default function RunDashboardPage() {
   const params = useParams<{ runId: string }>();
@@ -26,7 +30,9 @@ export default function RunDashboardPage() {
       loadRunSnapshot(runId) ??
       createRunSnapshot({
         runId,
-        prompt: "Fix the tenant access-control bug and compare queued branches.",
+        prompt: "Fix the sidebar toggle bug with three solution branches.",
+        branches: createSidebarArenaBranchList(),
+        mode: "sidebar-arena",
       });
 
     setSnapshot(savedSnapshot);
@@ -48,9 +54,21 @@ export default function RunDashboardPage() {
     () => branches.filter((branch) => branch.status === "Live verified").length,
     [branches],
   );
-
+  const isSidebarArena = snapshot?.mode === "sidebar-arena";
+  const verifiedArenaCount = useMemo(
+    () =>
+      branches.filter(
+        (branch) =>
+          isSidebarArenaBranch(branch.id) && branch.status === "Live verified",
+      ).length,
+    [branches],
+  );
   function openBranch(branchId: BranchId) {
-    const opened = window.open(branchPath(runId, branchId), "_blank");
+    const href =
+      isSidebarArena && isSidebarArenaBranch(branchId)
+        ? `${branchPath(runId, branchId)}?autostart=1`
+        : branchPath(runId, branchId);
+    const opened = window.open(href, "_blank");
 
     if (!opened) {
       setSnapshot((current) => {
@@ -65,7 +83,11 @@ export default function RunDashboardPage() {
   function openAllBranches() {
     let blocked = false;
     branches.forEach((branch) => {
-      const opened = window.open(branchPath(runId, branch.id), "_blank");
+      const href =
+        isSidebarArena && isSidebarArenaBranch(branch.id)
+          ? `${branchPath(runId, branch.id)}?autostart=1`
+          : branchPath(runId, branch.id);
+      const opened = window.open(href, "_blank");
       if (!opened) blocked = true;
     });
 
@@ -84,10 +106,11 @@ export default function RunDashboardPage() {
       <header className="run-hero">
         <div>
           <p className="eyebrow">Live Agent Run</p>
-          <h1>Live Agent Run</h1>
+          <h1>{isSidebarArena ? "Parallel Solution Arena" : "Live Agent Run"}</h1>
           <p className="muted-copy">
-            BroadcastChannel orchestration for branch tabs. The SEC-101 branch
-            publishes real /workbench BrowserPod proof events as it progresses.
+            {isSidebarArena
+              ? "Three BrowserPod branches solve the same sidebar bug, stream proof back here, and produce a winner recommendation."
+              : "BroadcastChannel orchestration for branch tabs. The SEC-101 branch publishes real /workbench BrowserPod proof events as it progresses."}
           </p>
         </div>
         <div className="run-id-panel">
@@ -117,43 +140,70 @@ export default function RunDashboardPage() {
 
       <section className="run-toolbar" aria-label="Run controls">
         <button className="button primary" type="button" onClick={openAllBranches}>
-          Open all branch tabs
+          {isSidebarArena ? "Launch / reopen all pods" : "Open all branch tabs"}
         </button>
-        <button
-          className="button"
-          type="button"
-          onClick={() => openBranch("access-control-fix")}
-        >
-          Open Access branch
-        </button>
-        <button
-          className="button"
-          type="button"
-          onClick={() => openBranch("csv-export-fix")}
-        >
-          Open CSV branch
-        </button>
-        <button
-          className="button"
-          type="button"
-          onClick={() => openBranch("email-validation-fix")}
-        >
-          Open Email branch
-        </button>
-        <button
-          className="button"
-          type="button"
-          onClick={() => openBranch("sidebar-toggle-fix")}
-        >
-          Open Sidebar branch
-        </button>
-        <Link className="button" href="/sprint">
-          Open /sprint proof
-        </Link>
-        <Link className="button" href="/workbench">
-          Open /workbench
-        </Link>
+        {isSidebarArena ? (
+          <>
+            {branches.map((branch) => (
+              <button
+                className="button"
+                key={branch.id}
+                type="button"
+                onClick={() => openBranch(branch.id)}
+              >
+                Open {branch.title}
+              </button>
+            ))}
+            <Link className="button" href="/arena">
+              New arena
+            </Link>
+          </>
+        ) : (
+          <>
+            <button
+              className="button"
+              type="button"
+              onClick={() => openBranch("access-control-fix")}
+            >
+              Open Access branch
+            </button>
+            <button
+              className="button"
+              type="button"
+              onClick={() => openBranch("csv-export-fix")}
+            >
+              Open CSV branch
+            </button>
+            <button
+              className="button"
+              type="button"
+              onClick={() => openBranch("email-validation-fix")}
+            >
+              Open Email branch
+            </button>
+            <button
+              className="button"
+              type="button"
+              onClick={() => openBranch("sidebar-toggle-fix")}
+            >
+              Open Sidebar branch
+            </button>
+            <Link className="button" href="/sprint">
+              Open /sprint proof
+            </Link>
+            <Link className="button" href="/workbench">
+              Open /workbench
+            </Link>
+          </>
+        )}
       </section>
+
+      {isSidebarArena ? (
+        <ArenaComparison
+          branches={branches}
+          verifiedArenaCount={verifiedArenaCount}
+        />
+      ) : null}
 
       <div className="run-dashboard-grid">
         <section className="run-branch-grid">
@@ -194,15 +244,117 @@ export default function RunDashboardPage() {
               <h2>Execution boundary</h2>
             </div>
             <div className="stack" style={{ gap: 8 }}>
-              <TruthRow label="Real" text="Access-Control branch launches the live /workbench BrowserPod proof." />
-              <TruthRow label="Real" text="Sidebar branch runs its own deterministic BrowserPod proof." />
-              <TruthRow label="Real" text="CSV branch can launch the live /sprint BrowserPod proof." />
-              <TruthRow label="Preview" text="Email branch is prepared for a future BrowserPod branch." />
+              {isSidebarArena ? (
+                <>
+                  <TruthRow label="Real" text="Each branch gets its own BrowserPod tab and sandbox." />
+                  <TruthRow label="Real" text="Each branch runs failing tests, applies its patch, reruns tests, and runs a build script." />
+                  <TruthRow label="Real" text="All three branches run the same test suite and must pass before being marked verified." />
+                  <TruthRow label="Preview" text="Preview output is an HTML artifact, not a full React portal yet." />
+                </>
+              ) : (
+                <>
+                  <TruthRow label="Real" text="Access-Control branch launches the live /workbench BrowserPod proof." />
+                  <TruthRow label="Real" text="Sidebar branch runs its own deterministic BrowserPod proof." />
+                  <TruthRow label="Real" text="CSV branch can launch the live /sprint BrowserPod proof." />
+                  <TruthRow label="Preview" text="Email branch is prepared for a future BrowserPod branch." />
+                </>
+              )}
             </div>
           </section>
         </aside>
       </div>
     </div>
+  );
+}
+
+function ArenaComparison({
+  branches,
+  verifiedArenaCount,
+}: {
+  branches: BranchSnapshot[];
+  verifiedArenaCount: number;
+}) {
+  const allVerified = verifiedArenaCount === sidebarArenaVariants.length;
+  const winnerReport = createWinnerReport(branches);
+
+  return (
+    <section className={`truth-panel${allVerified ? " card-glow" : ""}`}>
+      <div className="dashboard-header">
+        <div>
+          <p className="eyebrow">Comparison matrix</p>
+          <h2>Three branches, same bug</h2>
+        </div>
+        <div className="status-row">
+          <span className={`badge ${allVerified ? "ok" : "warn"}`}>
+            {verifiedArenaCount}/3 verified
+          </span>
+        </div>
+      </div>
+
+      <div className="comparison-table" role="table" aria-label="Arena branch comparison">
+        <div className="comparison-row comparison-head" role="row">
+          <span>Branch</span>
+          <span>Strategy</span>
+          <span>Proof</span>
+        </div>
+        {sidebarArenaVariants.map((variant) => {
+          const branch = branches.find((candidate) => candidate.id === variant.id);
+          const verified = branch?.status === "Live verified";
+          const failed = branch?.status === "Failed";
+
+          return (
+            <div className="comparison-row" key={variant.id} role="row">
+              <span>
+                <strong>{variant.title}</strong>
+                <small>{variant.agentStyle}</small>
+              </span>
+              <span>{variant.strategy}</span>
+              <span className={verified ? "text-ok" : failed ? "text-fail" : ""}>
+                {verified ? "tests + build passed" : failed ? "failed" : branch?.status ?? "waiting"}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="arena-report-grid">
+        <div className="card">
+          <h3>Branch summary</h3>
+          <p className="muted-copy">
+            {allVerified
+              ? "All three branches verified in BrowserPod."
+              : "Branch summaries update as each BrowserPod proof completes."}
+          </p>
+          <textarea className="summary-box" readOnly value={winnerReport} />
+          <button
+            className="button"
+            type="button"
+            disabled={!allVerified}
+            onClick={() => navigator.clipboard.writeText(winnerReport)}
+          >
+            Copy branch summary
+          </button>
+        </div>
+
+        <div className="card">
+          <h3>Run-level proof</h3>
+          <div className="artifact-list">
+            {sidebarArenaVariants.map((variant) => {
+              const branch = branches.find((candidate) => candidate.id === variant.id);
+              const verified = branch?.status === "Live verified";
+              return (
+                <div key={variant.id}>
+                  <span>{variant.title}</span>
+                  <strong className={verified ? "text-ok" : ""}>
+                    {verified ? "verified" : branch?.status ?? "waiting"}
+                  </strong>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -251,6 +403,25 @@ function DashboardBranchCard({
       </Link>
     </article>
   );
+}
+
+function createWinnerReport(branches: BranchSnapshot[]) {
+  const lines = [
+    "ForkLab Parallel Solution Arena",
+    "",
+    "Task: Fix the sidebar toggle bug in the sample React app.",
+    "",
+    "Branch results:",
+  ];
+
+  sidebarArenaVariants.forEach((variant) => {
+    const branch = branches.find((candidate) => candidate.id === variant.id);
+    lines.push(
+      `- ${variant.title} (${variant.agentStyle}): ${branch?.status ?? "Waiting"}; ${variant.strategy}.`,
+    );
+  });
+
+  return lines.join("\n");
 }
 
 function TruthRow({ label, text }: { label: string; text: string }) {

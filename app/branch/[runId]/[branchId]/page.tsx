@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TerminalPanel } from "@/components/TerminalPanel";
 import {
@@ -18,8 +18,10 @@ import {
 import {
   branchPath,
   createBranchList,
+  createSidebarArenaBranchList,
   loadRunSnapshot,
   publishRunEvent,
+  recordArenaPatch,
   runPath,
   type BranchId,
   type RunEvent,
@@ -34,10 +36,36 @@ import {
   sidebarTargetFile,
   sidebarTestCommand,
 } from "@/lib/sidebarBranch";
+import {
+  createArenaBuildScript,
+  createArenaDiff,
+  createArenaPackageJson,
+  createArenaProofScript,
+  getSidebarArenaVariant,
+  isSidebarArenaBranch,
+  type SidebarArenaVariant,
+} from "@/lib/sidebarArena";
+import {
+  arenaSidebarTaskDescription,
+  type ArenaPatchProposal,
+} from "@/lib/llm/arenaSchema";
 
 type PodTestResult = {
   status: "failed" | "passed";
   failures: Array<{ name: string; message: string }>;
+};
+type ArenaFailureContext = {
+  patchedContent: string;
+  failureReason: string;
+  errorOutput: string;
+};
+const ARENA_MAX_ATTEMPTS = 3;
+type BuildResult = {
+  status: "passed";
+  branch: string;
+  strategy: string;
+  previewHtml: string;
+  filesChanged: string[];
 };
 
 const csvProofEvents: RunEvent[] = [
@@ -178,13 +206,19 @@ const sidebarProofEvents: RunEvent[] = [
 
 export default function BranchWorkspacePage() {
   const params = useParams<{ runId: string; branchId: BranchId }>();
+  const searchParams = useSearchParams();
   const runId = paramValue(params.runId);
   const branchId = paramValue(params.branchId) as BranchId;
+  const arenaVariant = getSidebarArenaVariant(branchId);
   const terminalRef = useRef<HTMLDivElement | null>(null);
   const podRef = useRef<BrowserPodInstance | null>(null);
   const terminalInstanceRef = useRef<unknown>(null);
+  const autoStartedRef = useRef(false);
   const branch = useMemo(
-    () => createBranchList().find((candidate) => candidate.id === branchId),
+    () =>
+      [...createBranchList(), ...createSidebarArenaBranchList()].find(
+        (candidate) => candidate.id === branchId,
+      ),
     [branchId],
   );
   const [podStatus, setPodStatus] = useState<PodStatus>("idle");
@@ -197,6 +231,15 @@ export default function BranchWorkspacePage() {
   );
   const [sidebarSecondResult, setSidebarSecondResult] =
     useState<PodTestResult | null>(null);
+  const [arenaBuildResult, setArenaBuildResult] = useState<BuildResult | null>(null);
+  const [arenaPatchProposal, setArenaPatchProposal] =
+    useState<ArenaPatchProposal | null>(null);
+  const [arenaAttemptNumber, setArenaAttemptNumber] = useState(0);
+  const [arenaFailureContext, setArenaFailureContext] =
+    useState<ArenaFailureContext | null>(null);
+  const [arenaRetryStatus, setArenaRetryStatus] = useState<
+    "idle" | "running"
+  >("idle");
   const [sidebarError, setSidebarError] = useState<UserFacingError | null>(null);
 
   useEffect(() => {
@@ -220,7 +263,8 @@ export default function BranchWorkspacePage() {
     if (
       branchId !== "csv-export-fix" &&
       branchId !== "access-control-fix" &&
-      branchId !== "sidebar-toggle-fix"
+      branchId !== "sidebar-toggle-fix" &&
+      !isSidebarArenaBranch(branchId)
     ) {
       publishRunEvent(runId, {
         type: "branch.queued",
@@ -235,6 +279,13 @@ export default function BranchWorkspacePage() {
 
     return uninstall;
   }, [branch?.title, branchId, runId]);
+
+  useEffect(() => {
+    if (!arenaVariant || searchParams.get("autostart") !== "1") return;
+    if (autoStartedRef.current) return;
+    autoStartedRef.current = true;
+    void runSidebarArenaProof(arenaVariant);
+  });
 
   const workbenchHref = `/workbench?runId=${encodeURIComponent(
     runId,
@@ -382,6 +433,421 @@ export default function BranchWorkspacePage() {
     }
   }
 
+  async function runSidebarArenaProof(variant: SidebarArenaVariant) {
+    setSentProofEvents(true);
+    setSidebarError(null);
+    setSidebarFirstResult(null);
+    setSidebarSecondResult(null);
+    setArenaBuildResult(null);
+    setArenaPatchProposal(null);
+    setPodStatus("booting");
+    setTerminalLines([
+      `$ starting ${variant.title} BrowserPod branch`,
+      "scenario=parallel-sidebar-arena",
+      `strategy=${variant.strategy}`,
+    ]);
+
+    if (terminalRef.current) {
+      terminalRef.current.innerHTML = "";
+    }
+
+    try {
+      publishRunEvent(runId, {
+        type: "branch.booting",
+        branchId: variant.id,
+        message: `BrowserPod is booting for ${variant.title}.`,
+        terminalLine: `$ boot BrowserPod ${variant.title}`,
+      });
+
+      const pod = await bootForkLabPod(makeStorageKey(`forklab-${variant.id}`));
+      const terminal = await pod.createDefaultTerminal(terminalRef.current!);
+      podRef.current = pod;
+      terminalInstanceRef.current = terminal;
+
+      setPodStatus("writing-files");
+      await pod.createDirectory("/forklab-arena/src", { recursive: true });
+      await pod.createDirectory("/forklab-arena/tests", { recursive: true });
+      await writeTextFile(
+        pod,
+        "/forklab-arena/package.json",
+        createArenaPackageJson(variant),
+      );
+      await writeTextFile(
+        pod,
+        "/forklab-arena/src/sidebarState.js",
+        buggySidebarState,
+      );
+      await writeTextFile(
+        pod,
+        "/forklab-arena/tests/test-sidebarState.js",
+        variant.testContent,
+      );
+      await writeTextFile(
+        pod,
+        "/forklab-arena/build.js",
+        createArenaBuildScript(variant),
+      );
+      await writeTextFile(
+        pod,
+        "/forklab-arena/proof.js",
+        createArenaProofScript(variant),
+      );
+      publishRunEvent(runId, {
+        type: "branch.files_written",
+        branchId: variant.id,
+        message: `${variant.title} starter files, test, build, and proof scripts written.`,
+        terminalLine:
+          "$ wrote package.json src/sidebarState.js tests/test-sidebarState.js build.js proof.js",
+      });
+      setTerminalLines((current) => [
+        ...current,
+        "$ wrote package.json",
+        "$ wrote src/sidebarState.js",
+        "$ wrote tests/test-sidebarState.js",
+        "$ wrote build.js",
+        "$ wrote proof.js",
+      ]);
+
+      setPodStatus("running-command");
+      setTerminalLines((current) => [...current, "$ node proof.js"]);
+      await pod.run("node", ["proof.js"], {
+        terminal,
+        cwd: "/forklab-arena",
+        echo: true,
+      });
+
+      setTerminalLines((current) => [
+        ...current,
+        "$ npm test",
+        "Expected: route-change check should fail before patch.",
+      ]);
+      const firstResult = await runArenaTest({ allowFailure: true });
+
+      if (firstResult.status !== "failed") {
+        throw new Error(`Expected ${variant.title} first test run to fail.`);
+      }
+
+      setSidebarFirstResult(firstResult);
+      publishRunEvent(runId, {
+        type: "branch.test_failed",
+        branchId: variant.id,
+        message: `${variant.title} observed the route-change failure before patch.`,
+        terminalLine: "FAIL route change closes sidebar",
+      });
+      setTerminalLines((current) => [
+        ...current,
+        `First test result: failed (${firstResult.failures.length} assertion failure${
+          firstResult.failures.length === 1 ? "" : "s"
+        })`,
+        `$ POST /api/arena/plan-patch strategy=${variant.id}`,
+      ]);
+
+      await runAiPatchCycle(variant, formatTestOutput(firstResult), 1);
+    } catch (caught) {
+      setPodStatus("failed");
+      const userError = toUserFacingError(caught);
+      setSidebarError(userError);
+      setTerminalLines((current) => [...current, `Failed: ${userError.message}`]);
+      publishRunEvent(runId, {
+        type: "branch.failed",
+        branchId: variant.id,
+        message: userError.message,
+        terminalLine: `Failed: ${userError.message}`,
+      });
+    }
+  }
+
+  async function requestArenaPatchProposal(
+    variant: SidebarArenaVariant,
+    testOutput: string,
+    previousAttempt?: { patchedContent: string; failureReason: string; errorOutput: string; attemptNumber: number },
+  ): Promise<ArenaPatchProposal> {
+    const body = {
+      strategyId: variant.id,
+      task: arenaSidebarTaskDescription,
+      buggyContent: buggySidebarState,
+      testOutput,
+      provider: "auto" as const,
+      previousAttempt,
+    };
+    try {
+      const response = await fetch("/api/arena/plan-patch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const detail = (await response.json()) as { message?: string };
+        throw new Error(detail.message || "Arena patch provider failed.");
+      }
+      return (await response.json()) as ArenaPatchProposal;
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      setTerminalLines((current) => [
+        ...current,
+        `Provider unavailable: ${message}`,
+        "$ requesting deterministic fallback patch",
+      ]);
+      const fallback = await fetch("/api/arena/plan-patch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...body, provider: "fallback" }),
+      });
+      if (!fallback.ok) {
+        throw new Error("Fallback arena patch unavailable.");
+      }
+      return (await fallback.json()) as ArenaPatchProposal;
+    }
+  }
+
+  async function runAiPatchCycle(
+    variant: SidebarArenaVariant,
+    testOutput: string,
+    attemptNumber: number,
+    previousAttempt?: { patchedContent: string; failureReason: string; errorOutput: string; attemptNumber: number },
+  ) {
+    setArenaAttemptNumber(attemptNumber);
+    setArenaFailureContext(null);
+    const pod = podRef.current;
+    const terminal = terminalInstanceRef.current;
+    if (!pod || !terminal) {
+      throw new Error("BrowserPod has not booted yet.");
+    }
+
+    const proposal = await requestArenaPatchProposal(
+      variant,
+      testOutput,
+      previousAttempt,
+    );
+    setArenaPatchProposal(proposal);
+    setTerminalLines((current) => [
+      ...current,
+      `$ ${proposal.provider}${proposal.isFallback ? " (fallback)" : ""} returned patched src/sidebarState.js (attempt ${attemptNumber})`,
+      `diagnosis: ${proposal.diagnosis}`,
+    ]);
+    publishRunEvent(runId, {
+      type: "branch.llm_patch_proposed",
+      branchId: variant.id,
+      message: `${variant.agentStyle} (${proposal.provider}${proposal.isFallback ? "/fallback" : ""}) proposed a ${variant.title} patch (attempt ${attemptNumber}).`,
+      terminalLine: `$ ${proposal.provider} proposed ${variant.title} patch (attempt ${attemptNumber})`,
+    });
+
+    await writeTextFile(
+      pod,
+      "/forklab-arena/applyPatch.js",
+      buildArenaPatchScript(proposal.patchedContent),
+    );
+    setPodStatus("patching");
+    setTerminalLines((current) => [
+      ...current,
+      "$ wrote applyPatch.js (AI-generated patch)",
+      "$ node applyPatch.js",
+    ]);
+
+    try {
+      await pod.run("node", ["applyPatch.js"], {
+        terminal,
+        cwd: "/forklab-arena",
+        echo: true,
+      });
+    } catch (caught) {
+      const errorMessage = caught instanceof Error ? caught.message : String(caught);
+      const failure: ArenaFailureContext = {
+        patchedContent: proposal.patchedContent,
+        failureReason: "applyPatch.js failed to run",
+        errorOutput: errorMessage,
+      };
+      setArenaFailureContext(failure);
+      throw new Error(`AI patch could not be applied: ${errorMessage}`);
+    }
+    publishRunEvent(runId, {
+      type: "branch.patch_applied",
+      branchId: variant.id,
+      message: `${variant.title} AI patch written into BrowserPod.`,
+      terminalLine: "$ node applyPatch.js",
+    });
+
+    setPodStatus("running-command");
+    setTerminalLines((current) => [...current, "$ npm test"]);
+
+    let secondResult: PodTestResult;
+    try {
+      secondResult = await runArenaTest({ allowFailure: false });
+    } catch (caught) {
+      const errorMessage = caught instanceof Error ? caught.message : String(caught);
+      const failure: ArenaFailureContext = {
+        patchedContent: proposal.patchedContent,
+        failureReason: errorMessage.includes("test-result.json")
+          ? "Tests crashed before producing a result (likely a syntax or runtime error in the patched file)"
+          : "Tests crashed during execution",
+        errorOutput: errorMessage,
+      };
+      setArenaFailureContext(failure);
+      throw new Error(`Patched tests crashed: ${errorMessage}`);
+    }
+
+    if (secondResult.status !== "passed") {
+      const failure: ArenaFailureContext = {
+        patchedContent: proposal.patchedContent,
+        failureReason: `${secondResult.failures.length} assertion failure${secondResult.failures.length === 1 ? "" : "s"} after applying the patch`,
+        errorOutput: formatTestOutput(secondResult),
+      };
+      setArenaFailureContext(failure);
+      setSidebarSecondResult(secondResult);
+      throw new Error(`Expected ${variant.title} patched tests to pass.`);
+    }
+
+    setSidebarSecondResult(secondResult);
+    publishRunEvent(runId, {
+      type: "branch.test_passed",
+      branchId: variant.id,
+      message: `${variant.title} tests passed in BrowserPod.`,
+      terminalLine: "PASS npm test",
+    });
+
+    recordArenaPatch(runId, {
+      branchId: variant.id,
+      provider: proposal.provider,
+      diagnosis: proposal.diagnosis,
+      summary: proposal.summary,
+      patchedContent: proposal.patchedContent,
+      isFallback: proposal.isFallback,
+      testsPassed: secondResult.status === "passed",
+      failingTestCount: secondResult.failures.length,
+      recordedAt: Date.now(),
+    });
+
+    setTerminalLines((current) => [...current, "$ npm run build"]);
+    try {
+      await pod.run("npm", ["run", "build"], {
+        terminal,
+        cwd: "/forklab-arena",
+        echo: true,
+      });
+      const rawBuildResult = await readTextFile(
+        pod,
+        "/forklab-arena/build-result.json",
+      );
+      const nextBuildResult = JSON.parse(rawBuildResult) as BuildResult;
+      setArenaBuildResult(nextBuildResult);
+    } catch (caught) {
+      const errorMessage = caught instanceof Error ? caught.message : String(caught);
+      const failure: ArenaFailureContext = {
+        patchedContent: proposal.patchedContent,
+        failureReason: "Build step failed after tests passed",
+        errorOutput: errorMessage,
+      };
+      setArenaFailureContext(failure);
+      throw new Error(`Build failed: ${errorMessage}`);
+    }
+
+    setPodStatus("passed");
+    localStorage.setItem(`forklab:${variant.id}:proof-passed`, "true");
+    publishRunEvent(runId, {
+      type: "branch.verified",
+      branchId: variant.id,
+      message: `${variant.title} verified: tests and build passed in BrowserPod.`,
+      terminalLine: `VERIFIED ${variant.title} via BrowserPod`,
+    });
+    setTerminalLines((current) => [
+      ...current,
+      `Passed: ${variant.title} verified in BrowserPod.`,
+    ]);
+  }
+
+  async function requestArenaRetry() {
+    if (!arenaVariant || !arenaFailureContext) return;
+    if (arenaAttemptNumber >= ARENA_MAX_ATTEMPTS) return;
+    if (arenaRetryStatus === "running") return;
+
+    const nextAttempt = arenaAttemptNumber + 1;
+    const previous = {
+      patchedContent: arenaFailureContext.patchedContent,
+      failureReason: arenaFailureContext.failureReason,
+      errorOutput: arenaFailureContext.errorOutput,
+      attemptNumber: arenaAttemptNumber,
+    };
+
+    setArenaRetryStatus("running");
+    setSidebarError(null);
+    setSidebarSecondResult(null);
+    setArenaBuildResult(null);
+    setArenaPatchProposal(null);
+    setPodStatus("running-command");
+    setTerminalLines((current) => [
+      ...current,
+      `$ retrying AI patch (attempt ${nextAttempt} of ${ARENA_MAX_ATTEMPTS})`,
+      `previous failure: ${previous.failureReason}`,
+    ]);
+
+    try {
+      await runAiPatchCycle(
+        arenaVariant,
+        formatTestOutput(sidebarFirstResult ?? { status: "failed", failures: [] }),
+        nextAttempt,
+        previous,
+      );
+    } catch (caught) {
+      setPodStatus("failed");
+      const userError = toUserFacingError(caught);
+      setSidebarError(userError);
+      setTerminalLines((current) => [...current, `Failed: ${userError.message}`]);
+      publishRunEvent(runId, {
+        type: "branch.failed",
+        branchId: arenaVariant.id,
+        message: userError.message,
+        terminalLine: `Failed (attempt ${nextAttempt}): ${userError.message}`,
+      });
+    } finally {
+      setArenaRetryStatus("idle");
+    }
+  }
+
+  async function runArenaTest({ allowFailure }: { allowFailure: boolean }) {
+    const pod = podRef.current;
+    const terminal = terminalInstanceRef.current;
+
+    if (!pod || !terminal) {
+      throw new Error("BrowserPod has not booted yet.");
+    }
+
+    await writeTextFile(
+      pod,
+      "/forklab-arena/test-result.json",
+      JSON.stringify({ status: "pending", failures: [] }),
+    );
+
+    let runError: unknown = null;
+    try {
+      await pod.run("npm", ["test"], {
+        terminal,
+        cwd: "/forklab-arena",
+        echo: true,
+      });
+    } catch (caught) {
+      runError = caught;
+    }
+
+    const rawResult = await readTextFile(pod, "/forklab-arena/test-result.json");
+    const parsed = JSON.parse(rawResult) as { status: string; failures?: Array<{ name: string; message: string }> };
+
+    if (parsed.status === "pending") {
+      const message =
+        runError instanceof Error
+          ? runError.message
+          : runError
+            ? String(runError)
+            : "test process exited before writing test-result.json (likely a parse or runtime error in the patched file)";
+      throw new Error(`test-result.json missing valid result: ${message}`);
+    }
+
+    if (!allowFailure && runError && parsed.status !== "passed") {
+      throw runError;
+    }
+
+    return parsed as PodTestResult;
+  }
+
   async function runSidebarTest({ allowFailure }: { allowFailure: boolean }) {
     const pod = podRef.current;
     const terminal = terminalInstanceRef.current;
@@ -477,6 +943,16 @@ export default function BranchWorkspacePage() {
             Run sidebar BrowserPod proof
           </button>
         ) : null}
+        {arenaVariant ? (
+          <button
+            className="button primary"
+            type="button"
+            onClick={() => runSidebarArenaProof(arenaVariant)}
+            disabled={!["idle", "passed", "failed"].includes(podStatus)}
+          >
+            Run {arenaVariant.title} pod
+          </button>
+        ) : null}
       </section>
 
       <div className="branch-workspace-grid">
@@ -490,7 +966,29 @@ export default function BranchWorkspacePage() {
             </p>
           </div>
           <div className="branch-step-list">
-            {branchId === "access-control-fix" ? (
+            {arenaVariant ? (
+              [
+                "branch.booting",
+                "branch.files_written",
+                "branch.test_failed",
+                "branch.llm_patch_proposed",
+                "branch.patch_applied",
+                "branch.test_passed",
+                "branch.verified",
+              ].map((eventType) => (
+                <div className="branch-step" key={eventType}>
+                  <span />
+                  <div>
+                    <strong>{eventType}</strong>
+                    <p>
+                      {eventType === "branch.llm_patch_proposed"
+                        ? `${arenaVariant.agentStyle} strategy prepares a ${arenaVariant.title} patch.`
+                        : `${arenaVariant.title} publishes ${eventType} to the dashboard.`}
+                    </p>
+                  </div>
+                </div>
+              ))
+            ) : branchId === "access-control-fix" ? (
               accessControlEvents.map((event) => (
                 <div className="branch-step" key={event.type}>
                   <span />
@@ -538,17 +1036,21 @@ export default function BranchWorkspacePage() {
 
         <TerminalPanel
           title={`/branch/${branchId}`}
-          nativeRef={branchId === "sidebar-toggle-fix" ? terminalRef : undefined}
+          nativeRef={
+            branchId === "sidebar-toggle-fix" || arenaVariant
+              ? terminalRef
+              : undefined
+          }
           lines={terminalLines}
         />
       </div>
 
-      {branchId === "sidebar-toggle-fix" ? (
+      {branchId === "sidebar-toggle-fix" || arenaVariant ? (
         <div className="branch-workspace-grid">
           <section className={`panel${podStatus === "passed" ? " card-glow" : ""}`}>
             <div className="status-row" style={{ marginBottom: 12 }}>
               <span className={`badge ${podStatus === "passed" ? "ok" : podStatus === "failed" ? "fail" : "warn"}`}>
-                Sidebar proof: {podStatus === "passed" ? "passed" : podStatus === "failed" ? "failed" : "pending"}
+                {arenaVariant?.title ?? "Sidebar"} proof: {podStatus === "passed" ? "passed" : podStatus === "failed" ? "failed" : "pending"}
               </span>
             </div>
             <div className="report">
@@ -557,12 +1059,17 @@ export default function BranchWorkspacePage() {
                 done={sidebarFirstResult?.status === "failed"}
               />
               <ProofItem
-                label="Deterministic patch applied"
+                label={arenaVariant ? "Branch patch applied" : "Deterministic patch applied"}
                 done={Boolean(sidebarFirstResult)}
               />
               <ProofItem
-                label="Passing test observed"
-                done={sidebarSecondResult?.status === "passed"}
+                label={arenaVariant ? "Tests and build passed" : "Passing test observed"}
+                done={
+                  arenaVariant
+                    ? sidebarSecondResult?.status === "passed" &&
+                      arenaBuildResult?.status === "passed"
+                    : sidebarSecondResult?.status === "passed"
+                }
               />
             </div>
           </section>
@@ -570,15 +1077,61 @@ export default function BranchWorkspacePage() {
           <section className="card stack">
             <div>
               <p className="eyebrow">Patch diff</p>
-              <h2>{sidebarTargetFile}</h2>
+              <h2>{arenaVariant?.title ?? sidebarTargetFile}</h2>
               <p className="muted-copy">
-                The patch closes the sidebar on route navigation while preserving
-                toggle and unknown-event behavior.
+                {arenaVariant
+                  ? arenaVariant.summary
+                  : "The patch closes the sidebar on route navigation while preserving toggle and unknown-event behavior."}
               </p>
             </div>
-            <pre className="agent-diff-block">{createSidebarDiff()}</pre>
+            <pre className="agent-diff-block">
+              {arenaVariant
+                ? arenaPatchProposal
+                  ? createDynamicArenaDiff(arenaPatchProposal.patchedContent)
+                  : createArenaDiff(arenaVariant)
+                : createSidebarDiff()}
+            </pre>
+            {arenaVariant && arenaPatchProposal ? (
+              <div className="status-row">
+                <span
+                  className={`badge ${
+                    arenaPatchProposal.isFallback ? "warn" : "ok"
+                  }`}
+                >
+                  {arenaPatchProposal.provider}
+                  {arenaPatchProposal.isFallback ? " (fallback)" : ""}
+                </span>
+                <span className="muted-copy">
+                  {arenaPatchProposal.diagnosis}
+                </span>
+              </div>
+            ) : null}
           </section>
         </div>
+      ) : null}
+
+      {arenaBuildResult ? (
+        <section className="truth-panel">
+          <div>
+            <p className="eyebrow">Preview artifact</p>
+            <h2>{arenaBuildResult.branch}</h2>
+          </div>
+          <div className="agent-meta">
+            <div>
+              <span>Build</span>
+              <strong>{arenaBuildResult.status}</strong>
+            </div>
+            <div>
+              <span>Strategy</span>
+              <strong>{arenaBuildResult.strategy}</strong>
+            </div>
+            <div>
+              <span>Files changed</span>
+              <strong>{arenaBuildResult.filesChanged.join(", ")}</strong>
+            </div>
+          </div>
+          <pre className="agent-terminal">{arenaBuildResult.previewHtml}</pre>
+        </section>
       ) : null}
 
       {sidebarError ? (
@@ -590,6 +1143,34 @@ export default function BranchWorkspacePage() {
               <li key={step}>{step}</li>
             ))}
           </ul>
+          {arenaVariant && arenaFailureContext ? (
+            <div className="stack" style={{ gap: 8, marginTop: 12 }}>
+              <div className="status-row">
+                <span className="badge warn">
+                  Attempt {arenaAttemptNumber} of {ARENA_MAX_ATTEMPTS}
+                </span>
+                <span className="badge info">
+                  {arenaFailureContext.failureReason}
+                </span>
+              </div>
+              {arenaAttemptNumber < ARENA_MAX_ATTEMPTS ? (
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={requestArenaRetry}
+                  disabled={arenaRetryStatus === "running"}
+                >
+                  {arenaRetryStatus === "running"
+                    ? "Asking AI for a fix..."
+                    : `Request retry from AI (attempt ${arenaAttemptNumber + 1})`}
+                </button>
+              ) : (
+                <p className="muted-copy">
+                  Maximum retries reached for {arenaVariant.title}. Reload to start over.
+                </p>
+              )}
+            </div>
+          ) : null}
         </section>
       ) : null}
 
@@ -603,6 +1184,8 @@ export default function BranchWorkspacePage() {
                 ? "Access-Control branch hands off to the real /workbench proof."
               : branchId === "sidebar-toggle-fix"
                 ? "Sidebar branch runs its own real BrowserPod proof."
+              : arenaVariant
+                ? `${arenaVariant.title} is one of three same-task BrowserPod solution branches.`
               : "This branch is not verified yet."}
           </h2>
         </div>
@@ -613,6 +1196,8 @@ export default function BranchWorkspacePage() {
               ? "Open the workbench proof to run BrowserPod. Dashboard verification is published only after the approved patch passes there."
             : branchId === "sidebar-toggle-fix"
               ? "This branch boots BrowserPod directly in the branch workspace, runs a failing route-change test, applies a deterministic patch, and only then publishes verified."
+            : arenaVariant
+              ? "This tab runs one isolated BrowserPod for one sidebar solution strategy. The run dashboard compares it against the other two arena branches."
             : "This tab only publishes queued/preview state. It does not claim BrowserPod verification."}
         </p>
       </section>
@@ -624,6 +1209,26 @@ function paramValue(value: string | string[]) {
   return Array.isArray(value) ? value[0] : value;
 }
 
+function buildArenaPatchScript(patchedContent: string) {
+  return `const { writeFileSync } = require("node:fs");
+
+writeFileSync(
+  "/forklab-arena/src/sidebarState.js",
+  ${JSON.stringify(patchedContent)}
+);
+
+console.log("Applied AI-generated arena patch.");
+`;
+}
+
+function formatTestOutput(result: PodTestResult) {
+  if (result.status === "passed") return "All tests passed.";
+  return [
+    `Status: failed (${result.failures.length} failure${result.failures.length === 1 ? "" : "s"})`,
+    ...result.failures.map((f) => `FAIL ${f.name}: ${f.message}`),
+  ].join("\n");
+}
+
 function ProofItem({ label, done }: { label: string; done: boolean }) {
   return (
     <div className="card">
@@ -633,6 +1238,22 @@ function ProofItem({ label, done }: { label: string; done: boolean }) {
       </span>
     </div>
   );
+}
+
+function createDynamicArenaDiff(patchedContent: string) {
+  return `--- a/${sidebarTargetFile}
++++ b/${sidebarTargetFile}
+@@
+${buggySidebarState
+  .trimEnd()
+  .split("\n")
+  .map((line) => `-${line}`)
+  .join("\n")}
+${patchedContent
+  .trimEnd()
+  .split("\n")
+  .map((line) => `+${line}`)
+  .join("\n")}`;
 }
 
 function createSidebarDiff() {

@@ -5,16 +5,6 @@ import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
-import {
-  branchPath,
-  createBranchList,
-  createRunId,
-  createRunSnapshot,
-  loadRunSnapshot,
-  publishRunEvent,
-  runPath,
-  saveRunSnapshot,
-} from "@/lib/runEvents";
 
 type TemplateId = "sprint" | "variant" | "docsproof" | "packageguard";
 type ModalType = "files" | "connectors" | "skills" | null;
@@ -22,9 +12,9 @@ type ModalType = "files" | "connectors" | "skills" | null;
 const templates = [
   {
     id: "sprint",
-    title: "Sprint Arena",
-    kicker: "Fix repo issues",
-    description: "Multiple repo issues -> sandboxed fail/patch/pass verification.",
+    title: "Solution Arena",
+    kicker: "3 approaches, 1 bug",
+    description: "One sidebar task -> 3 BrowserPod branches -> compare winner.",
     status: "Live",
   },
   {
@@ -79,7 +69,7 @@ const variantBranches = [
 ] as const;
 
 const defaultPrompt =
-  "Fix the tenant access-control bug and compare it against CSV and queued UI branches.";
+  "Fix the sidebar toggle bug with Minimal, Robust, and UX Polish branches.";
 
 export default function TryPage() {
   const router = useRouter();
@@ -111,7 +101,7 @@ export default function TryPage() {
         { role: "User", text: prompt || defaultPrompt },
         {
           role: "ForkLab",
-          text: "Launching Sprint Arena. The SEC-101 access-control branch can run through /workbench; CSV remains a live deterministic proof branch.",
+          text: "Launching Parallel Solution Arena. Three BrowserPod branches will run the same sidebar bug with different solution strategies.",
         },
       ];
     }
@@ -137,32 +127,7 @@ export default function TryPage() {
 
   function launchAgents() {
     if (selectedTemplate === "sprint") {
-      const runId = createRunId();
-      const runPrompt = prompt || defaultPrompt;
-      const snapshot = createRunSnapshot({ runId, prompt: runPrompt });
-      let tabsBlocked = false;
-
-      saveRunSnapshot(runId, snapshot);
-      publishRunEvent(runId, {
-        type: "run.created",
-        message: runPrompt,
-        terminalLine: "$ run.created from ForkLab Command Center",
-      });
-
-      createBranchList().forEach((branch) => {
-        const opened = window.open(branchPath(runId, branch.id), "_blank");
-        if (!opened) tabsBlocked = true;
-      });
-
-      if (tabsBlocked) {
-        const latestSnapshot = loadRunSnapshot(runId);
-
-        if (latestSnapshot) {
-          saveRunSnapshot(runId, { ...latestSnapshot, tabsBlocked: true });
-        }
-      }
-
-      router.push(runPath(runId));
+      router.push("/arena");
       return;
     }
 
@@ -186,6 +151,9 @@ export default function TryPage() {
         <div className="actions command-actions">
           <Link href="/sandbox-test" className="button">
             Open Smoke Test
+          </Link>
+          <Link href="/arena" className="button">
+            Open Solution Arena
           </Link>
           <Link href="/sprint" className="button">
             Open Live Sprint Proof
@@ -318,7 +286,8 @@ export default function TryPage() {
               </button>
             </div>
             <p className="prompt-helper">
-              Sprint Arena opens dashboard branches; SEC-101 routes to the live workbench proof path.
+              For the PDF-aligned flagship demo, open Solution Arena to launch
+              three same-task BrowserPod branches.
             </p>
           </div>
         </section>
