@@ -93,17 +93,25 @@ export default function ArenaPage() {
 
     const runId = createRunId();
     const branches = createSandboxIssueBranchList(selectedIssues);
-    let tabsBlocked = false;
 
-    if (typeof window !== "undefined") {
-      try {
-        localStorage.setItem(
-          `forklab:run:${runId}:issues`,
-          JSON.stringify(selectedIssues),
-        );
-      } catch {
-        // ignore quota errors
-      }
+    // Open all tabs synchronously within the click handler before any async
+    // work — browsers block window.open() once the user gesture is consumed.
+    let tabsBlocked = false;
+    branches.forEach((branch) => {
+      const opened = window.open(
+        `${branchPath(runId, branch.id)}?autostart=1`,
+        `forklab-branch-${branch.id}`,
+      );
+      if (!opened) tabsBlocked = true;
+    });
+
+    try {
+      localStorage.setItem(
+        `forklab:run:${runId}:issues`,
+        JSON.stringify(selectedIssues),
+      );
+    } catch {
+      // ignore quota errors
     }
 
     saveRunSnapshot(
@@ -123,19 +131,11 @@ export default function ArenaPage() {
       terminalLine: "$ run.created sandbox-github-issues",
     });
 
-    branches.forEach((branch) => {
-      const opened = window.open(
-        `${branchPath(runId, branch.id)}?autostart=1`,
-        "_blank",
-      );
-      if (!opened) tabsBlocked = true;
-    });
-
     if (tabsBlocked) {
       publishRunEvent(runId, {
         type: "branch.failed",
         message:
-          "One or more branch tabs were blocked. Open branches manually from the dashboard.",
+          "One or more branch tabs were blocked. Allow popups for this site and try again.",
         terminalLine: "$ popup blocked for one or more branches",
       });
     }
