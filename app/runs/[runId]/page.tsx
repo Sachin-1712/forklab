@@ -19,6 +19,7 @@ import {
   isSidebarArenaBranch,
   sidebarArenaVariants,
 } from "@/lib/sidebarArena";
+import { getSandboxIssue, isSandboxIssueBranch } from "@/lib/sandboxIssues";
 
 export default function RunDashboardPage() {
   const params = useParams<{ runId: string }>();
@@ -55,6 +56,7 @@ export default function RunDashboardPage() {
     [branches],
   );
   const isSidebarArena = snapshot?.mode === "sidebar-arena";
+  const isSandboxIssues = snapshot?.mode === "sandbox-issues";
   const verifiedArenaCount = useMemo(
     () =>
       branches.filter(
@@ -63,9 +65,18 @@ export default function RunDashboardPage() {
       ).length,
     [branches],
   );
+  const verifiedIssueCount = useMemo(
+    () =>
+      branches.filter(
+        (branch) =>
+          isSandboxIssueBranch(branch.id) && branch.status === "Live verified",
+      ).length,
+    [branches],
+  );
   function openBranch(branchId: BranchId) {
     const href =
-      isSidebarArena && isSidebarArenaBranch(branchId)
+      (isSidebarArena && isSidebarArenaBranch(branchId)) ||
+      (isSandboxIssues && isSandboxIssueBranch(branchId))
         ? `${branchPath(runId, branchId)}?autostart=1`
         : branchPath(runId, branchId);
     const opened = window.open(href, "_blank");
@@ -84,7 +95,8 @@ export default function RunDashboardPage() {
     let blocked = false;
     branches.forEach((branch) => {
       const href =
-        isSidebarArena && isSidebarArenaBranch(branch.id)
+        (isSidebarArena && isSidebarArenaBranch(branch.id)) ||
+        (isSandboxIssues && isSandboxIssueBranch(branch.id))
           ? `${branchPath(runId, branch.id)}?autostart=1`
           : branchPath(runId, branch.id);
       const opened = window.open(href, "_blank");
@@ -106,9 +118,17 @@ export default function RunDashboardPage() {
       <header className="run-hero">
         <div>
           <p className="eyebrow">Live Agent Run</p>
-          <h1>{isSidebarArena ? "Parallel Solution Arena" : "Live Agent Run"}</h1>
+          <h1>
+            {isSandboxIssues
+              ? "GitHub Issues Arena"
+              : isSidebarArena
+                ? "Parallel Solution Arena"
+                : "Live Agent Run"}
+          </h1>
           <p className="muted-copy">
-            {isSidebarArena
+            {isSandboxIssues
+              ? "Selected sandbox GitHub issues run in parallel BrowserPod branches and stream proof back to this dashboard."
+              : isSidebarArena
               ? "Three BrowserPod branches solve the same sidebar bug, stream proof back here, and produce a winner recommendation."
               : "BroadcastChannel orchestration for branch tabs. The SEC-101 branch publishes real /workbench BrowserPod proof events as it progresses."}
           </p>
@@ -134,15 +154,22 @@ export default function RunDashboardPage() {
         <div className="status-row">
           <span className="badge ok">{verifiedCount} verified</span>
           <span className="badge info">{branches.length} branches</span>
+          {isSandboxIssues ? (
+            <span className="badge warn">
+              repo: {snapshot?.repoFullName ?? "sandbox"}
+            </span>
+          ) : null}
           <span className="badge">localStorage + BroadcastChannel</span>
         </div>
       </section>
 
       <section className="run-toolbar" aria-label="Run controls">
         <button className="button primary" type="button" onClick={openAllBranches}>
-          {isSidebarArena ? "Launch / reopen all pods" : "Open all branch tabs"}
+          {isSidebarArena || isSandboxIssues
+            ? "Launch / reopen all pods"
+            : "Open all branch tabs"}
         </button>
-        {isSidebarArena ? (
+        {isSidebarArena || isSandboxIssues ? (
           <>
             {branches.map((branch) => (
               <button
@@ -198,6 +225,13 @@ export default function RunDashboardPage() {
         )}
       </section>
 
+      {isSandboxIssues ? (
+        <IssueComparison
+          branches={branches}
+          verifiedIssueCount={verifiedIssueCount}
+        />
+      ) : null}
+
       {isSidebarArena ? (
         <ArenaComparison
           branches={branches}
@@ -223,8 +257,11 @@ export default function RunDashboardPage() {
                 events
                   .slice()
                   .reverse()
-                  .map((event) => (
-                    <div className="run-event" key={`${event.type}-${event.createdAt}`}>
+                  .map((event, index) => (
+                    <div
+                      className="run-event"
+                      key={`${event.type}-${event.branchId ?? "run"}-${event.createdAt}-${index}`}
+                    >
                       <span>{new Date(event.createdAt).toLocaleTimeString()}</span>
                       <strong>{event.type}</strong>
                       <p>{event.message || event.branchId || "Run event"}</p>
@@ -251,6 +288,13 @@ export default function RunDashboardPage() {
                   <TruthRow label="Real" text="All three branches run the same test suite and must pass before being marked verified." />
                   <TruthRow label="Preview" text="Preview output is an HTML artifact, not a full React portal yet." />
                 </>
+              ) : isSandboxIssues ? (
+                <>
+                  <TruthRow label="Real" text="Each selected issue gets its own BrowserPod tab and sandbox." />
+                  <TruthRow label="Real" text="Each issue branch writes a tiny repo slice, runs failing tests, requests a server-side patch, applies it, reruns tests, and builds." />
+                  <TruthRow label="Real" text="The issue list looks like GitHub, but the source repo is the built-in ForkLab sandbox repo for demo reliability." />
+                  <TruthRow label="Preview" text="Real GitHub OAuth, arbitrary repo cloning, and issue sync are not enabled yet." />
+                </>
               ) : (
                 <>
                   <TruthRow label="Real" text="Access-Control branch launches the live /workbench BrowserPod proof." />
@@ -264,6 +308,108 @@ export default function RunDashboardPage() {
         </aside>
       </div>
     </div>
+  );
+}
+
+function IssueComparison({
+  branches,
+  verifiedIssueCount,
+}: {
+  branches: BranchSnapshot[];
+  verifiedIssueCount: number;
+}) {
+  const allVerified = verifiedIssueCount === branches.length && branches.length > 0;
+  const report = createIssueReport(branches);
+
+  return (
+    <section className={`truth-panel${allVerified ? " card-glow" : ""}`}>
+      <div className="dashboard-header">
+        <div>
+          <p className="eyebrow">GitHub issue proof</p>
+          <h2>Selected issues running in parallel</h2>
+        </div>
+        <div className="status-row">
+          <span className={`badge ${allVerified ? "ok" : "warn"}`}>
+            {verifiedIssueCount}/{branches.length} verified
+          </span>
+          <span className="badge info">max 3 selected</span>
+        </div>
+      </div>
+
+      <div className="comparison-table" role="table" aria-label="Issue branch comparison">
+        <div className="comparison-row issue-comparison-row comparison-head" role="row">
+          <span>Issue</span>
+          <span>Target</span>
+          <span>Proof</span>
+        </div>
+        {branches.map((branch) => {
+          const issue = getSandboxIssue(branch.id);
+          const verified = branch.status === "Live verified";
+          const failed = branch.status === "Failed";
+
+          return (
+            <div
+              className="comparison-row issue-comparison-row"
+              key={branch.id}
+              role="row"
+            >
+              <span>
+                <strong>
+                  {issue ? `#${issue.number}` : branch.title}
+                </strong>
+                <small>{issue?.title ?? branch.description}</small>
+              </span>
+              <span>{issue?.targetFile ?? "sandbox file"}</span>
+              <span className={verified ? "text-ok" : failed ? "text-fail" : ""}>
+                {verified
+                  ? "tests + build passed"
+                  : failed
+                    ? "failed"
+                    : branch.status}
+              </span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="arena-report-grid">
+        <div className="card">
+          <h3>Issue run summary</h3>
+          <p className="muted-copy">
+            {allVerified
+              ? "All selected sandbox GitHub issues verified in BrowserPod."
+              : "This report completes as selected issue branches verify."}
+          </p>
+          <textarea className="summary-box" readOnly value={report} />
+          <button
+            className="button"
+            type="button"
+            disabled={!allVerified}
+            onClick={() => navigator.clipboard.writeText(report)}
+          >
+            Copy issue report
+          </button>
+        </div>
+
+        <div className="card">
+          <h3>Run-level proof</h3>
+          <div className="artifact-list">
+            {branches.map((branch) => {
+              const issue = getSandboxIssue(branch.id);
+              const verified = branch.status === "Live verified";
+              return (
+                <div key={branch.id}>
+                  <span>{issue ? `#${issue.number}` : branch.title}</span>
+                  <strong className={verified ? "text-ok" : ""}>
+                    {verified ? "verified" : branch.status}
+                  </strong>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -365,6 +511,10 @@ function DashboardBranchCard({
   branch: BranchSnapshot;
   runId: string;
 }) {
+  const branchHref =
+    isSidebarArenaBranch(branch.id) || isSandboxIssueBranch(branch.id)
+      ? `${branchPath(runId, branch.id)}?autostart=1`
+      : branchPath(runId, branch.id);
   const tone =
     branch.status === "Live verified"
       ? "ok"
@@ -398,11 +548,32 @@ function DashboardBranchCard({
         </div>
       </div>
       <pre className="agent-terminal">{branch.terminal.join("\n")}</pre>
-      <Link className="button" href={branchPath(runId, branch.id)} target="_blank">
+      <Link className="button" href={branchHref} target="_blank">
         Open branch tab
       </Link>
     </article>
   );
+}
+
+function createIssueReport(branches: BranchSnapshot[]) {
+  const lines = [
+    "ForkLab Sandbox GitHub Issues Arena",
+    "",
+    "Repo: Jyozaa/forklab-sandbox-issues",
+    "",
+    "Selected issue results:",
+  ];
+
+  branches.forEach((branch) => {
+    const issue = getSandboxIssue(branch.id);
+    lines.push(
+      issue
+        ? `- #${issue.number} ${issue.title}: ${branch.status}; target ${issue.targetFile}.`
+        : `- ${branch.title}: ${branch.status}.`,
+    );
+  });
+
+  return lines.join("\n");
 }
 
 function createWinnerReport(branches: BranchSnapshot[]) {
