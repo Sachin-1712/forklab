@@ -5,9 +5,11 @@ import { usePathname } from "next/navigation";
 
 const navItems = [
   { href: "/arena", label: "Arena" },
+  { href: "/arena-live", label: "Arena Live" },
+  { href: "/variant-arena", label: "Variant Arena" },
   { href: "/workbench", label: "Workbench" },
   { href: "/try", label: "Try" },
-  { href: "/agent-lab", label: "Proof Lab" },
+  { href: "/agent-lab", label: "Agent Lab" },
   { href: "/sprint", label: "Dashboard" },
   { href: "/sandbox-test", label: "Smoke Test" },
   { href: "/how-it-works", label: "How It Works" },
@@ -37,7 +39,7 @@ export function TopNav() {
             {item.label}
           </Link>
         ))}
-        <Link href="/arena" className="button primary nav-cta">
+        <Link href="/arena-live" className="button primary nav-cta">
           Launch Arena
         </Link>
       </div>
