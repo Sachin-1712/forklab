@@ -1,4 +1,4 @@
-import { getSandboxIssue, sandboxRepo } from "@/lib/sandboxIssues";
+import { sandboxRepo } from "@/lib/sandboxIssues";
 
 export const dynamic = "force-dynamic";
 
@@ -11,14 +11,22 @@ type GitHubContent = {
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json()) as { issueId?: string };
+    const body = (await request.json()) as {
+      issueId?: string;
+      targetFile?: string;
+    };
     if (!body.issueId) throw new Error("issueId is required.");
-    const issue = getSandboxIssue(body.issueId);
-    if (!issue) throw new Error("Unknown sandbox issue.");
+    if (!body.targetFile) throw new Error("targetFile is required.");
+    if (!/^issue-\d+$/.test(body.issueId)) {
+      throw new Error("issueId must be of the form issue-<number>.");
+    }
+    if (body.targetFile.includes("..") || body.targetFile.startsWith("/")) {
+      throw new Error("targetFile must be a relative repo path.");
+    }
 
     const response = await fetch(
       `https://api.github.com/repos/${sandboxRepo.fullName}/contents/${encodeURIComponentPath(
-        issue.targetFile,
+        body.targetFile,
       )}?ref=${encodeURIComponent(sandboxRepo.defaultBranch)}`,
       {
         headers: githubHeaders(),
@@ -34,8 +42,8 @@ export async function POST(request: Request) {
     const sourceContent = Buffer.from(payload.content, "base64").toString("utf8");
 
     return Response.json({
-      issueId: issue.id,
-      targetFile: issue.targetFile,
+      issueId: body.issueId,
+      targetFile: body.targetFile,
       sourceContent,
       sha: payload.sha,
       htmlUrl: payload.html_url,

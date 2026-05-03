@@ -34,8 +34,8 @@ import {
   createSandboxPackageJson,
   createSandboxPatchScript,
   createSandboxProofScript,
-  getSandboxIssue,
-  sandboxIssueIds,
+  deriveTestFile,
+  isSandboxIssueBranch,
   type SandboxIssue,
 } from "@/lib/sandboxIssues";
 import {
@@ -73,7 +73,7 @@ type ArenaFailureContext = {
 };
 type IssueFailureContext = ArenaFailureContext;
 const ARENA_MAX_ATTEMPTS = 3;
-const ISSUE_MAX_ATTEMPTS = 2;
+const ISSUE_MAX_ATTEMPTS = 3;
 type BuildResult = {
   status: "passed";
   branch?: string;
@@ -227,20 +227,22 @@ export default function BranchWorkspacePage() {
   const runId = paramValue(params.runId);
   const branchId = paramValue(params.branchId) as BranchId;
   const arenaVariant = getSidebarArenaVariant(branchId);
-  const sandboxIssue = getSandboxIssue(branchId);
+  const isSandboxBranch = isSandboxIssueBranch(branchId);
+  const [sandboxIssue, setSandboxIssue] = useState<SandboxIssue | null>(null);
   const terminalRef = useRef<HTMLDivElement | null>(null);
   const podRef = useRef<BrowserPodInstance | null>(null);
   const terminalInstanceRef = useRef<unknown>(null);
   const autoStartedRef = useRef(false);
-  const branch = useMemo(
-    () =>
-      [
-        ...createBranchList(),
-        ...createSidebarArenaBranchList(),
-        ...createSandboxIssueBranchList(sandboxIssueIds),
-      ].find((candidate) => candidate.id === branchId),
-    [branchId],
-  );
+  const branch = useMemo(() => {
+    const sandboxBranches = sandboxIssue
+      ? createSandboxIssueBranchList([sandboxIssue])
+      : [];
+    return [
+      ...createBranchList(),
+      ...createSidebarArenaBranchList(),
+      ...sandboxBranches,
+    ].find((candidate) => candidate.id === branchId);
+  }, [branchId, sandboxIssue]);
   const [podStatus, setPodStatus] = useState<PodStatus>("idle");
   const [terminalLines, setTerminalLines] = useState<string[]>([
     "$ opening branch workspace",
@@ -276,6 +278,46 @@ export default function BranchWorkspacePage() {
   const [sidebarError, setSidebarError] = useState<UserFacingError | null>(null);
 
   useEffect(() => {
+    if (!isSandboxBranch || sandboxIssue) return;
+    let cancelled = false;
+
+    const cacheKey = `forklab:run:${runId}:issues`;
+    if (typeof window !== "undefined") {
+      try {
+        const cached = localStorage.getItem(cacheKey);
+        if (cached) {
+          const parsed = JSON.parse(cached) as SandboxIssue[];
+          const match = parsed.find((entry) => entry.id === branchId);
+          if (match) {
+            setSandboxIssue(match);
+            return;
+          }
+        }
+      } catch {
+        // ignore corrupt cache
+      }
+    }
+
+    async function load() {
+      try {
+        const response = await fetch("/api/issues/list", { cache: "no-store" });
+        if (!response.ok) return;
+        const payload = (await response.json()) as { issues: SandboxIssue[] };
+        if (cancelled) return;
+        const match = payload.issues.find((entry) => entry.id === branchId);
+        if (match) setSandboxIssue(match);
+      } catch {
+        // surfaced via UI when proof tries to run
+      }
+    }
+
+    void load();
+    return () => {
+      cancelled = true;
+    };
+  }, [branchId, isSandboxBranch, runId, sandboxIssue]);
+
+  useEffect(() => {
     const uninstall = installBrowserPodRuntimeErrorGuard();
     const snapshot = loadRunSnapshot(runId);
     const branchSnapshot = snapshot?.branches.find(
@@ -298,7 +340,7 @@ export default function BranchWorkspacePage() {
       branchId !== "access-control-fix" &&
       branchId !== "sidebar-toggle-fix" &&
       !isSidebarArenaBranch(branchId) &&
-      !sandboxIssue
+      !isSandboxBranch
     ) {
       publishRunEvent(runId, {
         type: "branch.queued",
@@ -619,6 +661,8 @@ export default function BranchWorkspacePage() {
       terminalRef.current.innerHTML = "";
     }
 
+    const testFile = deriveTestFile(issue.targetFile);
+
     try {
       publishRunEvent(runId, {
         type: "branch.booting",
@@ -635,7 +679,10 @@ export default function BranchWorkspacePage() {
       setPodStatus("writing-files");
       const source = await fetchSandboxIssueSource(issue);
       setIssueSourceContent(source.sourceContent);
-      await pod.createDirectory("/forklab-issue/src", { recursive: true });
+      const targetDir = issue.targetFile.includes("/")
+        ? `/forklab-issue/${issue.targetFile.split("/").slice(0, -1).join("/")}`
+        : "/forklab-issue";
+      await pod.createDirectory(targetDir, { recursive: true });
       await pod.createDirectory("/forklab-issue/tests", { recursive: true });
       await writeTextFile(
         pod,
@@ -646,11 +693,6 @@ export default function BranchWorkspacePage() {
         pod,
         `/forklab-issue/${issue.targetFile}`,
         source.sourceContent,
-      );
-      await writeTextFile(
-        pod,
-        `/forklab-issue/${issue.testFile}`,
-        issue.testContent,
       );
       await writeTextFile(
         pod,
@@ -667,14 +709,13 @@ export default function BranchWorkspacePage() {
         type: "branch.files_written",
         branchId: issue.id,
         message: `Sandbox files for #${issue.number} written into BrowserPod.`,
-        terminalLine: `$ wrote package.json ${issue.targetFile} ${issue.testFile} build.js proof.js`,
+        terminalLine: `$ wrote package.json ${issue.targetFile} build.js proof.js`,
       });
       setTerminalLines((current) => [
         ...current,
         `$ fetched ${issue.targetFile} from GitHub`,
         "$ wrote package.json",
         `$ wrote ${issue.targetFile}`,
-        `$ wrote ${issue.testFile}`,
         "$ wrote build.js",
         "$ wrote proof.js",
       ]);
@@ -692,36 +733,15 @@ export default function BranchWorkspacePage() {
 
       setTerminalLines((current) => [
         ...current,
-        "$ npm test",
-        "Expected: issue regression should fail before patch.",
-      ]);
-      const firstResult = await runIssueTest({ allowFailure: true });
-
-      if (firstResult.status !== "failed") {
-        throw new Error(`Expected sandbox issue #${issue.number} to fail first.`);
-      }
-
-      setSidebarFirstResult(firstResult);
-      publishRunEvent(runId, {
-        type: "branch.test_failed",
-        branchId: issue.id,
-        message: `Issue #${issue.number} failing regression observed before patch.`,
-        terminalLine: `FAIL issue #${issue.number} regression`,
-      });
-
-      setTerminalLines((current) => [
-        ...current,
-        `First test result: failed (${firstResult.failures.length} assertion failure${
-          firstResult.failures.length === 1 ? "" : "s"
-        })`,
         `$ POST /api/issues/plan-patch issue=#${issue.number}`,
       ]);
 
       await runIssuePatchCycle(
         issue,
         source.sourceContent,
-        formatTestOutput(firstResult),
+        "",
         1,
+        testFile,
       );
     } catch (caught) {
       setPodStatus("failed");
@@ -748,6 +768,7 @@ export default function BranchWorkspacePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           issueId: sandboxIssue.id,
+          targetFile: sandboxIssue.targetFile,
           patchedContent: issuePatchProposal.patchedContent,
         }),
       });
@@ -775,7 +796,7 @@ export default function BranchWorkspacePage() {
     const response = await fetch("/api/issues/source", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ issueId: issue.id }),
+      body: JSON.stringify({ issueId: issue.id, targetFile: issue.targetFile }),
     });
     const payload = (await response.json()) as {
       sourceContent?: string;
@@ -792,6 +813,7 @@ export default function BranchWorkspacePage() {
     sourceContent: string,
     testOutput: string,
     attemptNumber: number,
+    testFile: string,
     previousAttempt?: {
       patchedContent: string;
       failureReason: string;
@@ -815,6 +837,7 @@ export default function BranchWorkspacePage() {
       issue,
       sourceContent,
       testOutput,
+      attemptNumber,
       previousAttempt,
     );
     setIssuePatchProposal(proposal);
@@ -825,6 +848,57 @@ export default function BranchWorkspacePage() {
       terminalLine: `$ ${proposal.provider} proposed patch for #${issue.number} (attempt ${attemptNumber})`,
     });
 
+    // Restore original buggy source (in case a previous attempt already patched the file).
+    await writeTextFile(
+      pod,
+      `/forklab-issue/${issue.targetFile}`,
+      sourceContent,
+    );
+    // Write the LLM-generated regression test.
+    await writeTextFile(pod, `/forklab-issue/${testFile}`, proposal.testContent);
+    setTerminalLines((current) => [
+      ...current,
+      `$ wrote ${testFile} (LLM-generated regression test)`,
+      "$ npm test",
+      "Expected: regression should fail against the buggy source.",
+    ]);
+
+    let firstResult: PodTestResult;
+    try {
+      firstResult = await runIssueTest({ allowFailure: true });
+    } catch (caught) {
+      const errorMessage = caught instanceof Error ? caught.message : String(caught);
+      const failure = {
+        patchedContent: proposal.patchedContent,
+        failureReason: "Generated test crashed against the original source",
+        errorOutput: errorMessage,
+      };
+      setIssueFailureContext(failure);
+      throw new Error(`Generated test crashed: ${errorMessage}`);
+    }
+
+    if (firstResult.status !== "failed") {
+      const failure = {
+        patchedContent: proposal.patchedContent,
+        failureReason:
+          "Generated test passed against the buggy source — it does not exercise the issue.",
+        errorOutput: formatTestOutput(firstResult),
+      };
+      setSidebarFirstResult(firstResult);
+      setIssueFailureContext(failure);
+      throw new Error(
+        `Generated test did not fail against original source on attempt ${attemptNumber}.`,
+      );
+    }
+
+    setSidebarFirstResult(firstResult);
+    publishRunEvent(runId, {
+      type: "branch.test_failed",
+      branchId: issue.id,
+      message: `Issue #${issue.number} regression observed before patch (attempt ${attemptNumber}).`,
+      terminalLine: `FAIL issue #${issue.number} regression`,
+    });
+
     await writeTextFile(
       pod,
       "/forklab-issue/applyPatch.js",
@@ -833,6 +907,9 @@ export default function BranchWorkspacePage() {
     setPodStatus("patching");
     setTerminalLines((current) => [
       ...current,
+      `First test result: failed (${firstResult.failures.length} assertion failure${
+        firstResult.failures.length === 1 ? "" : "s"
+      })`,
       "$ wrote applyPatch.js",
       "$ node applyPatch.js",
     ]);
@@ -912,7 +989,7 @@ export default function BranchWorkspacePage() {
 
   async function requestIssueRetry() {
     if (!sandboxIssue || !issueFailureContext) return;
-    if (issueAttemptNumber >= ISSUE_MAX_ATTEMPTS) return;
+    if (issueAttemptNumber > ISSUE_MAX_ATTEMPTS) return;
     if (issueRetryStatus === "running") return;
 
     const nextAttempt = issueAttemptNumber + 1;
@@ -940,6 +1017,7 @@ export default function BranchWorkspacePage() {
         issueSourceContent,
         formatTestOutput(sidebarFirstResult ?? { status: "failed", failures: [] }),
         nextAttempt,
+        deriveTestFile(sandboxIssue.targetFile),
         previous,
       );
     } catch (caught) {
@@ -962,6 +1040,7 @@ export default function BranchWorkspacePage() {
     issue: SandboxIssue,
     sourceContent: string,
     testOutput: string,
+    attemptNumber: number,
     previousAttempt?: {
       patchedContent: string;
       failureReason: string;
@@ -970,30 +1049,24 @@ export default function BranchWorkspacePage() {
     },
   ): Promise<IssuePatchProposal> {
     const body = {
-      issueId: issue.id,
+      issue: {
+        id: issue.id,
+        number: issue.number,
+        title: issue.title,
+        body: issue.body,
+        targetFile: issue.targetFile,
+      },
       sourceContent,
       testOutput,
       provider: "auto" as const,
       previousAttempt,
     };
+    const useFallback = attemptNumber > ISSUE_MAX_ATTEMPTS;
 
-    try {
-      const response = await fetch("/api/issues/plan-patch", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      if (!response.ok) {
-        const detail = (await response.json()) as { message?: string };
-        throw new Error(detail.message || "Sandbox issue provider failed.");
-      }
-      return (await response.json()) as IssuePatchProposal;
-    } catch (caught) {
-      const message = caught instanceof Error ? caught.message : String(caught);
+    if (useFallback) {
       setTerminalLines((current) => [
         ...current,
-        `Provider unavailable: ${message}`,
-        "$ requesting deterministic sandbox issue patch",
+        `$ ${ISSUE_MAX_ATTEMPTS} LLM attempts exhausted, requesting deterministic fallback patch`,
       ]);
       const fallback = await fetch("/api/issues/plan-patch", {
         method: "POST",
@@ -1001,10 +1074,22 @@ export default function BranchWorkspacePage() {
         body: JSON.stringify({ ...body, provider: "fallback" }),
       });
       if (!fallback.ok) {
-        throw new Error("Fallback sandbox issue patch unavailable.");
+        const detail = (await fallback.json()) as { message?: string };
+        throw new Error(detail.message || "Fallback sandbox issue patch unavailable.");
       }
       return (await fallback.json()) as IssuePatchProposal;
     }
+
+    const response = await fetch("/api/issues/plan-patch", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!response.ok) {
+      const detail = (await response.json()) as { message?: string };
+      throw new Error(detail.message || "Sandbox issue provider failed.");
+    }
+    return (await response.json()) as IssuePatchProposal;
   }
 
   async function requestArenaPatchProposal(
@@ -1801,6 +1886,17 @@ export default function BranchWorkspacePage() {
                   {issueRetryStatus === "running"
                     ? "Asking AI for a corrected fix..."
                     : `Retry AI fix (attempt ${issueAttemptNumber + 1})`}
+                </button>
+              ) : issueAttemptNumber === ISSUE_MAX_ATTEMPTS ? (
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={requestIssueRetry}
+                  disabled={issueRetryStatus === "running"}
+                >
+                  {issueRetryStatus === "running"
+                    ? "Applying deterministic fallback..."
+                    : "Use deterministic fallback"}
                 </button>
               ) : (
                 <p className="muted-copy">

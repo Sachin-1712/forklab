@@ -19,7 +19,10 @@ import {
   isSidebarArenaBranch,
   sidebarArenaVariants,
 } from "@/lib/sidebarArena";
-import { getSandboxIssue, isSandboxIssueBranch } from "@/lib/sandboxIssues";
+import {
+  isSandboxIssueBranch,
+  sandboxIssueNumberFromBranchId,
+} from "@/lib/sandboxIssues";
 
 export default function RunDashboardPage() {
   const params = useParams<{ runId: string }>();
@@ -343,7 +346,7 @@ function IssueComparison({
           <span>Proof</span>
         </div>
         {branches.map((branch) => {
-          const issue = getSandboxIssue(branch.id);
+          const issueNumber = sandboxIssueNumberFromBranchId(branch.id);
           const verified = branch.status === "Live verified";
           const failed = branch.status === "Failed";
 
@@ -355,11 +358,11 @@ function IssueComparison({
             >
               <span>
                 <strong>
-                  {issue ? `#${issue.number}` : branch.title}
+                  {issueNumber !== null ? `#${issueNumber}` : branch.title}
                 </strong>
-                <small>{issue?.title ?? branch.description}</small>
+                <small>{branch.title}</small>
               </span>
-              <span>{issue?.targetFile ?? "sandbox file"}</span>
+              <span>{branch.description || "sandbox file"}</span>
               <span className={verified ? "text-ok" : failed ? "text-fail" : ""}>
                 {verified
                   ? "tests + build passed"
@@ -395,11 +398,11 @@ function IssueComparison({
           <h3>Run-level proof</h3>
           <div className="artifact-list">
             {branches.map((branch) => {
-              const issue = getSandboxIssue(branch.id);
+              const issueNumber = sandboxIssueNumberFromBranchId(branch.id);
               const verified = branch.status === "Live verified";
               return (
                 <div key={branch.id}>
-                  <span>{issue ? `#${issue.number}` : branch.title}</span>
+                  <span>{issueNumber !== null ? `#${issueNumber}` : branch.title}</span>
                   <strong className={verified ? "text-ok" : ""}>
                     {verified ? "verified" : branch.status}
                   </strong>
@@ -565,10 +568,10 @@ function createIssueReport(branches: BranchSnapshot[]) {
   ];
 
   branches.forEach((branch) => {
-    const issue = getSandboxIssue(branch.id);
+    const issueNumber = sandboxIssueNumberFromBranchId(branch.id);
     lines.push(
-      issue
-        ? `- #${issue.number} ${issue.title}: ${branch.status}; target ${issue.targetFile}.`
+      issueNumber !== null
+        ? `- #${issueNumber} ${branch.title}: ${branch.status}; target ${branch.description || "sandbox file"}.`
         : `- ${branch.title}: ${branch.status}.`,
     );
   });

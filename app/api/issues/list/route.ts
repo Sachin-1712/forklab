@@ -1,7 +1,7 @@
 import {
-  mergeGitHubIssues,
-  sandboxIssues,
+  buildSandboxIssue,
   sandboxRepo,
+  type SandboxIssue,
 } from "@/lib/sandboxIssues";
 
 export const dynamic = "force-dynamic";
@@ -29,7 +29,7 @@ export async function GET() {
       throw new Error(`GitHub issues request failed with ${response.status}.`);
     }
 
-    const issues = ((await response.json()) as GitHubIssue[])
+    const githubIssues = ((await response.json()) as GitHubIssue[])
       .filter((issue) => !issue.pull_request)
       .map((issue) => ({
         number: issue.number,
@@ -41,18 +41,25 @@ export async function GET() {
           .filter(Boolean),
       }));
 
+    const issues: SandboxIssue[] = githubIssues
+      .map(buildSandboxIssue)
+      .filter((issue): issue is SandboxIssue => issue !== null);
+
+    const skipped = githubIssues.length - issues.length;
+
     return Response.json({
       repo: sandboxRepo,
       source: "github",
-      issues: mergeGitHubIssues(issues),
+      issues,
+      skippedWithoutTargetFile: skipped,
     });
   } catch (error) {
     return Response.json(
       {
         repo: sandboxRepo,
-        source: "fallback",
+        source: "error",
         message: error instanceof Error ? error.message : String(error),
-        issues: sandboxIssues,
+        issues: [] as SandboxIssue[],
       },
       { status: 200 },
     );

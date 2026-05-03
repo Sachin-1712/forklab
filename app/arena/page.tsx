@@ -13,7 +13,6 @@ import {
 } from "@/lib/runEvents";
 import {
   createSandboxIssueBranchList,
-  sandboxIssues,
   sandboxRepo,
   type SandboxIssue,
   type SandboxIssueId,
@@ -25,21 +24,16 @@ export default function ArenaPage() {
   const router = useRouter();
   const [githubIssues, setGithubIssues] = useState<SandboxIssue[]>([]);
   const [issueSourceStatus, setIssueSourceStatus] = useState<
-    "loading" | "github" | "fallback" | "failed"
+    "loading" | "github" | "error"
   >("loading");
-  const [selectedIssueIds, setSelectedIssueIds] = useState<SandboxIssueId[]>([
-    "issue-1",
-    "issue-2",
-    "issue-3",
-  ]);
-  const visibleIssues = githubIssues.length ? githubIssues : sandboxIssues;
+  const [issueLoadMessage, setIssueLoadMessage] = useState<string>("");
+  const [selectedIssueIds, setSelectedIssueIds] = useState<SandboxIssueId[]>([]);
+  const visibleIssues = githubIssues;
   const selectedIssues = useMemo(
     () =>
       selectedIssueIds
         .map((issueId) => visibleIssues.find((issue) => issue.id === issueId))
-        .filter((issue): issue is (typeof sandboxIssues)[number] =>
-          Boolean(issue),
-        ),
+        .filter((issue): issue is SandboxIssue => Boolean(issue)),
     [selectedIssueIds, visibleIssues],
   );
   const arenaPrompt = selectedIssues.length
@@ -56,19 +50,25 @@ export default function ArenaPage() {
         const response = await fetch("/api/issues/list", { cache: "no-store" });
         if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
         const payload = (await response.json()) as {
-          source: "github" | "fallback";
+          source: "github" | "error";
           issues: SandboxIssue[];
+          message?: string;
         };
         if (cancelled) return;
         setGithubIssues(payload.issues);
         setIssueSourceStatus(payload.source);
+        setIssueLoadMessage(payload.message ?? "");
         if (payload.issues.length) {
           setSelectedIssueIds(
             payload.issues.slice(0, maxIssueSelection).map((issue) => issue.id),
           );
         }
-      } catch {
-        if (!cancelled) setIssueSourceStatus("failed");
+      } catch (error) {
+        if (cancelled) return;
+        setIssueSourceStatus("error");
+        setIssueLoadMessage(
+          error instanceof Error ? error.message : String(error),
+        );
       }
     }
 
@@ -92,8 +92,19 @@ export default function ArenaPage() {
     if (!selectedIssueIds.length) return;
 
     const runId = createRunId();
-    const branches = createSandboxIssueBranchList(selectedIssueIds);
+    const branches = createSandboxIssueBranchList(selectedIssues);
     let tabsBlocked = false;
+
+    if (typeof window !== "undefined") {
+      try {
+        localStorage.setItem(
+          `forklab:run:${runId}:issues`,
+          JSON.stringify(selectedIssues),
+        );
+      } catch {
+        // ignore quota errors
+      }
+    }
 
     saveRunSnapshot(
       runId,
@@ -146,9 +157,13 @@ export default function ArenaPage() {
         </div>
         <div className="status-row">
           <span className={`badge ${issueSourceStatus === "github" ? "ok" : "warn"}`}>
-            {issueSourceStatus === "github" ? "GitHub issues live" : "fallback catalog"}
+            {issueSourceStatus === "github"
+              ? "GitHub issues live"
+              : issueSourceStatus === "loading"
+                ? "loading"
+                : "GitHub unreachable"}
           </span>
-          <span className="badge info">{visibleIssues.length} demo issues</span>
+          <span className="badge info">{visibleIssues.length} open issues</span>
           <span className="badge warn">Max 3 selected</span>
         </div>
       </header>
@@ -175,7 +190,7 @@ export default function ArenaPage() {
                   ? "Sandbox issues loaded from demo repo"
                   : issueSourceStatus === "loading"
                     ? "Loading GitHub"
-                  : "Fallback catalog (Preview)"}
+                    : "GitHub unreachable"}
               </strong>
             </div>
             <a
@@ -187,10 +202,18 @@ export default function ArenaPage() {
             </a>
           </div>
 
-          {issueSourceStatus !== "github" ? (
+          {issueSourceStatus === "error" ? (
             <div className="info-callout">
-              ForkLab could not reach GitHub issues and is showing the local
-              catalog. Refresh after GitHub access is available.
+              ForkLab could not reach GitHub issues
+              {issueLoadMessage ? `: ${issueLoadMessage}` : "."} Refresh after
+              GitHub access is available.
+            </div>
+          ) : null}
+          {issueSourceStatus === "github" && visibleIssues.length === 0 ? (
+            <div className="info-callout">
+              No open issues with a detectable filename. Issue titles or bodies
+              must mention a JavaScript/TypeScript filename for ForkLab to
+              locate the patch target.
             </div>
           ) : null}
 
@@ -226,8 +249,9 @@ export default function ArenaPage() {
                     </strong>
                     <small>{issue.summary}</small>
                     <em>
-                      {issue.labels.join(" / ")}
-                      {issue.githubUrl ? " / GitHub" : " / local fallback"}
+                      {[...issue.labels, issue.targetFile]
+                        .filter(Boolean)
+                        .join(" / ")}
                     </em>
                   </span>
                 </label>

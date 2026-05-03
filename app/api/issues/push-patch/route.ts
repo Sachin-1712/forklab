@@ -1,13 +1,13 @@
 import {
-  getSandboxIssue,
+  sandboxIssueNumberFromBranchId,
   sandboxRepo,
-  type SandboxIssueId,
 } from "@/lib/sandboxIssues";
 
 export const dynamic = "force-dynamic";
 
 type PushRequest = {
-  issueId: SandboxIssueId;
+  issueId: string;
+  targetFile: string;
   patchedContent: string;
 };
 
@@ -22,12 +22,21 @@ type GitHubContentResponse = {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as Partial<PushRequest>;
-    if (!body.issueId || typeof body.patchedContent !== "string") {
-      throw new Error("issueId and patchedContent are required.");
+    if (
+      !body.issueId ||
+      !body.targetFile ||
+      typeof body.patchedContent !== "string"
+    ) {
+      throw new Error("issueId, targetFile, and patchedContent are required.");
     }
 
-    const issue = getSandboxIssue(body.issueId);
-    if (!issue) throw new Error("Unknown sandbox issue.");
+    const issueNumber = sandboxIssueNumberFromBranchId(body.issueId);
+    if (issueNumber === null) {
+      throw new Error("issueId must be of the form issue-<number>.");
+    }
+    if (body.targetFile.includes("..") || body.targetFile.startsWith("/")) {
+      throw new Error("targetFile must be a relative repo path.");
+    }
     if (!body.patchedContent.includes("export")) {
       throw new Error("Patch must keep the ES module export.");
     }
@@ -39,7 +48,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const branchName = `forklab/issue-${issue.number}-${Date.now()}`;
+    const branchName = `forklab/issue-${issueNumber}-${Date.now()}`;
     const mainRef = await githubJson<GitRefResponse>(
       `/repos/${sandboxRepo.fullName}/git/ref/heads/${sandboxRepo.defaultBranch}`,
       token,
@@ -58,17 +67,17 @@ export async function POST(request: Request) {
     );
 
     const currentFile = await githubJson<GitHubContentResponse>(
-      `/repos/${sandboxRepo.fullName}/contents/${issue.targetFile}?ref=${sandboxRepo.defaultBranch}`,
+      `/repos/${sandboxRepo.fullName}/contents/${body.targetFile}?ref=${sandboxRepo.defaultBranch}`,
       token,
     );
 
     await githubJson(
-      `/repos/${sandboxRepo.fullName}/contents/${issue.targetFile}`,
+      `/repos/${sandboxRepo.fullName}/contents/${body.targetFile}`,
       token,
       {
         method: "PUT",
         body: {
-          message: `fix: resolve issue #${issue.number}`,
+          message: `fix: resolve issue #${issueNumber}`,
           content: Buffer.from(body.patchedContent, "utf8").toString("base64"),
           sha: currentFile.sha,
           branch: branchName,
@@ -81,7 +90,7 @@ export async function POST(request: Request) {
       status: "pushed",
       branchName,
       branchUrl,
-      issueUrl: `${sandboxRepo.url}/issues/${issue.number}`,
+      issueUrl: `${sandboxRepo.url}/issues/${issueNumber}`,
       message: `Verified patch pushed to ${branchName}.`,
     });
   } catch (error) {

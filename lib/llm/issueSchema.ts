@@ -1,8 +1,10 @@
 import type { AgentProvider } from "./patchSchema";
 import {
   createFallbackPatchedContent,
-  getSandboxIssue,
-  sandboxIssueIds,
+  createFallbackTestContent,
+  hasFallbackForIssue,
+  sandboxIssueNumberFromBranchId,
+  type SandboxIssue,
   type SandboxIssueId,
 } from "../sandboxIssues";
 
@@ -12,12 +14,21 @@ export type IssuePatchProposal = {
   diagnosis: string;
   targetFile: string;
   patchedContent: string;
+  testContent: string;
   summary: string;
   isFallback: boolean;
 };
 
+export type IssueContext = {
+  id: SandboxIssueId;
+  number: number;
+  title: string;
+  body: string;
+  targetFile: string;
+};
+
 export type IssuePatchPlanInput = {
-  issueId: SandboxIssueId;
+  issue: IssueContext;
   sourceContent: string;
   testOutput: string;
   provider: AgentProvider;
@@ -33,10 +44,11 @@ export const issuePatchJsonSchema = {
   type: "object",
   properties: {
     provider: { type: "string", enum: ["gemini", "groq", "fallback"] },
-    issueId: { type: "string", enum: sandboxIssueIds },
+    issueId: { type: "string" },
     diagnosis: { type: "string" },
     targetFile: { type: "string" },
     patchedContent: { type: "string" },
+    testContent: { type: "string" },
     summary: { type: "string" },
     isFallback: { type: "boolean" },
   },
@@ -46,6 +58,7 @@ export const issuePatchJsonSchema = {
     "diagnosis",
     "targetFile",
     "patchedContent",
+    "testContent",
     "summary",
     "isFallback",
   ],
@@ -72,8 +85,20 @@ export function validateIssuePatchPlanInput(
     throw new Error("Request body must be an object.");
   }
   const input = value as Partial<IssuePatchPlanInput>;
-  if (!input.issueId || !getSandboxIssue(input.issueId)) {
-    throw new Error("issueId must be a known sandbox issue.");
+  if (!input.issue || typeof input.issue !== "object") {
+    throw new Error("issue context is required.");
+  }
+  const issue = input.issue;
+  if (
+    !issue.id ||
+    sandboxIssueNumberFromBranchId(issue.id) === null ||
+    typeof issue.number !== "number" ||
+    typeof issue.title !== "string" ||
+    typeof issue.body !== "string" ||
+    typeof issue.targetFile !== "string" ||
+    !issue.targetFile.trim()
+  ) {
+    throw new Error("issue context is malformed.");
   }
   if (typeof input.testOutput !== "string") {
     throw new Error("testOutput is required.");
@@ -106,14 +131,13 @@ export function validateIssuePatchPlanInput(
 
 export function validateIssuePatchProposal(
   value: unknown,
-  expectedProvider?: "gemini" | "groq" | "fallback",
+  expected?: { provider?: "gemini" | "groq" | "fallback"; issue: IssueContext },
 ): IssuePatchProposal {
   if (!value || typeof value !== "object") {
     throw new Error("Issue patch proposal must be an object.");
   }
 
   const proposal = value as Partial<IssuePatchProposal>;
-  const issue = proposal.issueId ? getSandboxIssue(proposal.issueId) : null;
 
   if (
     proposal.provider !== "gemini" &&
@@ -122,14 +146,23 @@ export function validateIssuePatchProposal(
   ) {
     throw new Error("Issue patch provider is invalid.");
   }
-  if (expectedProvider && proposal.provider !== expectedProvider) {
-    throw new Error(`Issue patch provider must be ${expectedProvider}.`);
+  if (expected?.provider && proposal.provider !== expected.provider) {
+    throw new Error(`Issue patch provider must be ${expected.provider}.`);
   }
-  if (!issue) {
+  if (
+    !proposal.issueId ||
+    sandboxIssueNumberFromBranchId(proposal.issueId) === null
+  ) {
     throw new Error("Issue patch issueId is invalid.");
   }
-  if (proposal.targetFile !== issue.targetFile) {
-    throw new Error(`Issue patch target must be ${issue.targetFile}.`);
+  if (expected?.issue && proposal.issueId !== expected.issue.id) {
+    throw new Error(`Issue patch issueId must be ${expected.issue.id}.`);
+  }
+  if (typeof proposal.targetFile !== "string" || !proposal.targetFile.trim()) {
+    throw new Error("Issue patch targetFile is required.");
+  }
+  if (expected?.issue && proposal.targetFile !== expected.issue.targetFile) {
+    throw new Error(`Issue patch target must be ${expected.issue.targetFile}.`);
   }
   if (
     typeof proposal.diagnosis !== "string" ||
@@ -151,11 +184,27 @@ export function validateIssuePatchProposal(
   if (shellNeedles.some((needle) => proposal.patchedContent!.includes(needle))) {
     throw new Error("Issue patch must not contain shell-like commands.");
   }
-  const nonAsciiMatch = proposal.patchedContent.match(/[^\x09\x0A\x0D\x20-\x7E]/);
-  if (nonAsciiMatch) {
-    const codepoint = nonAsciiMatch[0].codePointAt(0)?.toString(16) ?? "?";
+  const nonAsciiPatch = proposal.patchedContent.match(/[^\x09\x0A\x0D\x20-\x7E]/);
+  if (nonAsciiPatch) {
+    const codepoint = nonAsciiPatch[0].codePointAt(0)?.toString(16) ?? "?";
     throw new Error(
       `Issue patch contains non-ASCII character U+${codepoint.toUpperCase()}.`,
+    );
+  }
+  if (typeof proposal.testContent !== "string" || !proposal.testContent.trim()) {
+    throw new Error("Issue patch testContent is required.");
+  }
+  if (!proposal.testContent.includes("import")) {
+    throw new Error("Issue patch testContent must import the target module.");
+  }
+  if (shellNeedles.some((needle) => proposal.testContent!.includes(needle))) {
+    throw new Error("Issue patch testContent must not contain shell-like commands.");
+  }
+  const nonAsciiTest = proposal.testContent.match(/[^\x09\x0A\x0D\x20-\x7E]/);
+  if (nonAsciiTest) {
+    const codepoint = nonAsciiTest[0].codePointAt(0)?.toString(16) ?? "?";
+    throw new Error(
+      `Issue patch testContent contains non-ASCII character U+${codepoint.toUpperCase()}.`,
     );
   }
   if (typeof proposal.isFallback !== "boolean") {
@@ -174,18 +223,26 @@ export function parseJsonish(value: unknown) {
   return value;
 }
 
+export function canFallbackForIssue(issueNumber: number) {
+  return hasFallbackForIssue(issueNumber);
+}
+
 export function createIssueFallbackPatch(
-  issueId: SandboxIssueId,
+  issue: SandboxIssue,
   sourceContent: string,
   attemptNumber = 1,
 ): IssuePatchProposal {
-  const issue = getSandboxIssue(issueId);
-  if (!issue) throw new Error("Unknown sandbox issue.");
-  const isForcedRetryDemo = issueId === "issue-1" && attemptNumber <= 1;
+  const isForcedRetryDemo = issue.number === 1 && attemptNumber <= 1;
+  const testContent = createFallbackTestContent(issue);
+  if (!testContent) {
+    throw new Error(
+      `No deterministic fallback test exists for issue #${issue.number}.`,
+    );
+  }
 
   return {
     provider: "fallback",
-    issueId,
+    issueId: issue.id,
     diagnosis: isForcedRetryDemo
       ? "Intentional demo miss: the first AI attempt changes the file but does not fix addition."
       : "The failing test identifies a small pure-function bug in the sandbox issue target file.",
@@ -196,6 +253,7 @@ export function createIssueFallbackPatch(
 };
 `
       : createFallbackPatchedContent(issue, sourceContent, attemptNumber),
+    testContent,
     summary: isForcedRetryDemo
       ? "Intentional first-attempt failure for the retry demo."
       : `Deterministic fallback patch for #${issue.number}: ${issue.title}.`,

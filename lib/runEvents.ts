@@ -1,6 +1,9 @@
 "use client";
 
-import { getSandboxIssue, isSandboxIssueBranch } from "./sandboxIssues";
+import {
+  isSandboxIssueBranch,
+  sandboxIssueNumberFromBranchId,
+} from "./sandboxIssues";
 import type { SandboxIssueId } from "./sandboxIssues";
 
 export type BranchId =
@@ -225,7 +228,7 @@ export function createRunSnapshot({
           : isSidebarArenaBranchId(branch.id)
             ? "Ready to launch an isolated BrowserPod solution branch."
           : isSandboxIssueBranch(branch.id)
-            ? `Ready to run sandbox issue #${getSandboxIssue(branch.id)?.number}.`
+            ? `Ready to run sandbox issue #${sandboxIssueNumberFromBranchId(branch.id) ?? "?"}.`
           : "Waiting for the next real BrowserPod branch.",
       terminal: [
         branch.id === "access-control-fix"
@@ -237,7 +240,7 @@ export function createRunSnapshot({
           : isSidebarArenaBranchId(branch.id)
             ? `$ waiting for ${branch.title} BrowserPod`
           : isSandboxIssueBranch(branch.id)
-            ? `$ waiting for issue #${getSandboxIssue(branch.id)?.number} BrowserPod`
+            ? `$ waiting for issue #${sandboxIssueNumberFromBranchId(branch.id) ?? "?"} BrowserPod`
           : "$ queued for next BrowserPod branch",
       ],
       updatedAt: now,
