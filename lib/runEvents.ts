@@ -1,5 +1,8 @@
 "use client";
 
+import { getSandboxIssue, isSandboxIssueBranch } from "./sandboxIssues";
+import type { SandboxIssueId } from "./sandboxIssues";
+
 export type BranchId =
   | "access-control-fix"
   | "csv-export-fix"
@@ -7,7 +10,8 @@ export type BranchId =
   | "sidebar-toggle-fix"
   | "sidebar-minimal-fix"
   | "sidebar-robust-fix"
-  | "sidebar-ux-polish";
+  | "sidebar-ux-polish"
+  | SandboxIssueId;
 
 export type RunEventType =
   | "run.created"
@@ -90,8 +94,9 @@ export type ArenaJudgeRecord = {
 export type RunSnapshot = {
   runId: string;
   prompt: string;
-  mode?: "standard" | "sidebar-arena";
+  mode?: "standard" | "sidebar-arena" | "sandbox-issues";
   winnerBranchId?: BranchId;
+  repoFullName?: string;
   createdAt: number;
   updatedAt: number;
   branches: BranchSnapshot[];
@@ -179,6 +184,7 @@ export function createRunSnapshot({
   branches = createBranchList(),
   mode = "standard",
   winnerBranchId,
+  repoFullName,
   tabsBlocked,
 }: {
   runId: string;
@@ -186,6 +192,7 @@ export function createRunSnapshot({
   branches?: BranchDefinition[];
   mode?: RunSnapshot["mode"];
   winnerBranchId?: BranchId;
+  repoFullName?: string;
   tabsBlocked?: boolean;
 }): RunSnapshot {
   const now = Date.now();
@@ -195,6 +202,7 @@ export function createRunSnapshot({
     prompt,
     mode,
     winnerBranchId,
+    repoFullName,
     createdAt: now,
     updatedAt: now,
     branches: branches.map((branch) => ({
@@ -216,6 +224,8 @@ export function createRunSnapshot({
             ? "Ready to run the live sidebar BrowserPod proof."
           : isSidebarArenaBranchId(branch.id)
             ? "Ready to launch an isolated BrowserPod solution branch."
+          : isSandboxIssueBranch(branch.id)
+            ? `Ready to run sandbox issue #${getSandboxIssue(branch.id)?.number}.`
           : "Waiting for the next real BrowserPod branch.",
       terminal: [
         branch.id === "access-control-fix"
@@ -226,6 +236,8 @@ export function createRunSnapshot({
             ? "$ waiting for Sidebar BrowserPod proof"
           : isSidebarArenaBranchId(branch.id)
             ? `$ waiting for ${branch.title} BrowserPod`
+          : isSandboxIssueBranch(branch.id)
+            ? `$ waiting for issue #${getSandboxIssue(branch.id)?.number} BrowserPod`
           : "$ queued for next BrowserPod branch",
       ],
       updatedAt: now,

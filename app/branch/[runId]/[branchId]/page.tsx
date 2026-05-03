@@ -28,6 +28,17 @@ import {
   type RunEventType,
 } from "@/lib/runEvents";
 import {
+  createSandboxBuildScript,
+  createSandboxIssueBranchList,
+  createSandboxIssueDiff,
+  createSandboxPackageJson,
+  createSandboxPatchScript,
+  createSandboxProofScript,
+  getSandboxIssue,
+  sandboxIssueIds,
+  type SandboxIssue,
+} from "@/lib/sandboxIssues";
+import {
   buggySidebarState,
   fixedSidebarState,
   sidebarApplyPatch,
@@ -49,6 +60,7 @@ import {
   arenaSidebarTaskDescription,
   type ArenaPatchProposal,
 } from "@/lib/llm/arenaSchema";
+import type { IssuePatchProposal } from "@/lib/llm/issueSchema";
 
 type PodTestResult = {
   status: "failed" | "passed";
@@ -59,12 +71,17 @@ type ArenaFailureContext = {
   failureReason: string;
   errorOutput: string;
 };
+type IssueFailureContext = ArenaFailureContext;
 const ARENA_MAX_ATTEMPTS = 3;
+const ISSUE_MAX_ATTEMPTS = 2;
 type BuildResult = {
   status: "passed";
-  branch: string;
-  strategy: string;
-  previewHtml: string;
+  branch?: string;
+  strategy?: string;
+  previewHtml?: string;
+  repo?: string;
+  issue?: number;
+  title?: string;
   filesChanged: string[];
 };
 
@@ -210,15 +227,18 @@ export default function BranchWorkspacePage() {
   const runId = paramValue(params.runId);
   const branchId = paramValue(params.branchId) as BranchId;
   const arenaVariant = getSidebarArenaVariant(branchId);
+  const sandboxIssue = getSandboxIssue(branchId);
   const terminalRef = useRef<HTMLDivElement | null>(null);
   const podRef = useRef<BrowserPodInstance | null>(null);
   const terminalInstanceRef = useRef<unknown>(null);
   const autoStartedRef = useRef(false);
   const branch = useMemo(
     () =>
-      [...createBranchList(), ...createSidebarArenaBranchList()].find(
-        (candidate) => candidate.id === branchId,
-      ),
+      [
+        ...createBranchList(),
+        ...createSidebarArenaBranchList(),
+        ...createSandboxIssueBranchList(sandboxIssueIds),
+      ].find((candidate) => candidate.id === branchId),
     [branchId],
   );
   const [podStatus, setPodStatus] = useState<PodStatus>("idle");
@@ -234,10 +254,23 @@ export default function BranchWorkspacePage() {
   const [arenaBuildResult, setArenaBuildResult] = useState<BuildResult | null>(null);
   const [arenaPatchProposal, setArenaPatchProposal] =
     useState<ArenaPatchProposal | null>(null);
+  const [issuePatchProposal, setIssuePatchProposal] =
+    useState<IssuePatchProposal | null>(null);
+  const [issueSourceContent, setIssueSourceContent] = useState("");
+  const [issuePushStatus, setIssuePushStatus] = useState<
+    "idle" | "pushing" | "pushed" | "failed"
+  >("idle");
+  const [issuePushMessage, setIssuePushMessage] = useState("");
   const [arenaAttemptNumber, setArenaAttemptNumber] = useState(0);
   const [arenaFailureContext, setArenaFailureContext] =
     useState<ArenaFailureContext | null>(null);
+  const [issueAttemptNumber, setIssueAttemptNumber] = useState(0);
+  const [issueFailureContext, setIssueFailureContext] =
+    useState<IssueFailureContext | null>(null);
   const [arenaRetryStatus, setArenaRetryStatus] = useState<
+    "idle" | "running"
+  >("idle");
+  const [issueRetryStatus, setIssueRetryStatus] = useState<
     "idle" | "running"
   >("idle");
   const [sidebarError, setSidebarError] = useState<UserFacingError | null>(null);
@@ -264,7 +297,8 @@ export default function BranchWorkspacePage() {
       branchId !== "csv-export-fix" &&
       branchId !== "access-control-fix" &&
       branchId !== "sidebar-toggle-fix" &&
-      !isSidebarArenaBranch(branchId)
+      !isSidebarArenaBranch(branchId) &&
+      !sandboxIssue
     ) {
       publishRunEvent(runId, {
         type: "branch.queued",
@@ -281,10 +315,14 @@ export default function BranchWorkspacePage() {
   }, [branch?.title, branchId, runId]);
 
   useEffect(() => {
-    if (!arenaVariant || searchParams.get("autostart") !== "1") return;
+    if ((!arenaVariant && !sandboxIssue) || searchParams.get("autostart") !== "1") return;
     if (autoStartedRef.current) return;
     autoStartedRef.current = true;
-    void runSidebarArenaProof(arenaVariant);
+    if (arenaVariant) {
+      void runSidebarArenaProof(arenaVariant);
+    } else if (sandboxIssue) {
+      void runSandboxIssueProof(sandboxIssue);
+    }
   });
 
   const workbenchHref = `/workbench?runId=${encodeURIComponent(
@@ -554,6 +592,418 @@ export default function BranchWorkspacePage() {
         message: userError.message,
         terminalLine: `Failed: ${userError.message}`,
       });
+    }
+  }
+
+  async function runSandboxIssueProof(issue: SandboxIssue) {
+    setSentProofEvents(true);
+    setSidebarError(null);
+    setSidebarFirstResult(null);
+    setSidebarSecondResult(null);
+    setArenaBuildResult(null);
+    setArenaPatchProposal(null);
+    setIssuePatchProposal(null);
+    setIssueSourceContent("");
+    setIssuePushStatus("idle");
+    setIssuePushMessage("");
+    setIssueAttemptNumber(0);
+    setIssueFailureContext(null);
+    setPodStatus("booting");
+    setTerminalLines([
+      `$ starting GitHub issue #${issue.number} BrowserPod branch`,
+      "repo=Jyozaa/forklab-sandbox-issues",
+      `target=${issue.targetFile}`,
+    ]);
+
+    if (terminalRef.current) {
+      terminalRef.current.innerHTML = "";
+    }
+
+    try {
+      publishRunEvent(runId, {
+        type: "branch.booting",
+        branchId: issue.id,
+        message: `BrowserPod is booting for sandbox issue #${issue.number}.`,
+        terminalLine: `$ boot BrowserPod issue #${issue.number}`,
+      });
+
+      const pod = await bootForkLabPod(makeStorageKey(`forklab-${issue.id}`));
+      const terminal = await pod.createDefaultTerminal(terminalRef.current!);
+      podRef.current = pod;
+      terminalInstanceRef.current = terminal;
+
+      setPodStatus("writing-files");
+      const source = await fetchSandboxIssueSource(issue);
+      setIssueSourceContent(source.sourceContent);
+      await pod.createDirectory("/forklab-issue/src", { recursive: true });
+      await pod.createDirectory("/forklab-issue/tests", { recursive: true });
+      await writeTextFile(
+        pod,
+        "/forklab-issue/package.json",
+        createSandboxPackageJson(issue),
+      );
+      await writeTextFile(
+        pod,
+        `/forklab-issue/${issue.targetFile}`,
+        source.sourceContent,
+      );
+      await writeTextFile(
+        pod,
+        `/forklab-issue/${issue.testFile}`,
+        issue.testContent,
+      );
+      await writeTextFile(
+        pod,
+        "/forklab-issue/build.js",
+        createSandboxBuildScript(issue),
+      );
+      await writeTextFile(
+        pod,
+        "/forklab-issue/proof.js",
+        createSandboxProofScript(issue),
+      );
+
+      publishRunEvent(runId, {
+        type: "branch.files_written",
+        branchId: issue.id,
+        message: `Sandbox files for #${issue.number} written into BrowserPod.`,
+        terminalLine: `$ wrote package.json ${issue.targetFile} ${issue.testFile} build.js proof.js`,
+      });
+      setTerminalLines((current) => [
+        ...current,
+        `$ fetched ${issue.targetFile} from GitHub`,
+        "$ wrote package.json",
+        `$ wrote ${issue.targetFile}`,
+        `$ wrote ${issue.testFile}`,
+        "$ wrote build.js",
+        "$ wrote proof.js",
+      ]);
+
+      setPodStatus("running-command");
+      setTerminalLines((current) => [
+        ...current,
+        "$ node proof.js",
+      ]);
+      await pod.run("node", ["proof.js"], {
+        terminal,
+        cwd: "/forklab-issue",
+        echo: true,
+      });
+
+      setTerminalLines((current) => [
+        ...current,
+        "$ npm test",
+        "Expected: issue regression should fail before patch.",
+      ]);
+      const firstResult = await runIssueTest({ allowFailure: true });
+
+      if (firstResult.status !== "failed") {
+        throw new Error(`Expected sandbox issue #${issue.number} to fail first.`);
+      }
+
+      setSidebarFirstResult(firstResult);
+      publishRunEvent(runId, {
+        type: "branch.test_failed",
+        branchId: issue.id,
+        message: `Issue #${issue.number} failing regression observed before patch.`,
+        terminalLine: `FAIL issue #${issue.number} regression`,
+      });
+
+      setTerminalLines((current) => [
+        ...current,
+        `First test result: failed (${firstResult.failures.length} assertion failure${
+          firstResult.failures.length === 1 ? "" : "s"
+        })`,
+        `$ POST /api/issues/plan-patch issue=#${issue.number}`,
+      ]);
+
+      await runIssuePatchCycle(
+        issue,
+        source.sourceContent,
+        formatTestOutput(firstResult),
+        1,
+      );
+    } catch (caught) {
+      setPodStatus("failed");
+      const userError = toUserFacingError(caught);
+      setSidebarError(userError);
+      setTerminalLines((current) => [...current, `Failed: ${userError.message}`]);
+      publishRunEvent(runId, {
+        type: "branch.failed",
+        branchId: issue.id,
+        message: userError.message,
+        terminalLine: `Failed: ${userError.message}`,
+      });
+    }
+  }
+
+  async function pushVerifiedIssuePatch() {
+    if (!sandboxIssue || !issuePatchProposal || podStatus !== "passed") return;
+    setIssuePushStatus("pushing");
+    setIssuePushMessage("");
+
+    try {
+      const response = await fetch("/api/issues/push-patch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          issueId: sandboxIssue.id,
+          patchedContent: issuePatchProposal.patchedContent,
+        }),
+      });
+      const payload = (await response.json()) as {
+        status?: string;
+        branchUrl?: string;
+        message?: string;
+      };
+      if (!response.ok) {
+        throw new Error(payload.message || "GitHub push failed.");
+      }
+      setIssuePushStatus("pushed");
+      setIssuePushMessage(payload.branchUrl || "Patch pushed to GitHub.");
+      setTerminalLines((current) => [
+        ...current,
+        `$ pushed verified patch to ${sandboxIssue.targetFile}`,
+      ]);
+    } catch (caught) {
+      setIssuePushStatus("failed");
+      setIssuePushMessage(caught instanceof Error ? caught.message : String(caught));
+    }
+  }
+
+  async function fetchSandboxIssueSource(issue: SandboxIssue) {
+    const response = await fetch("/api/issues/source", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ issueId: issue.id }),
+    });
+    const payload = (await response.json()) as {
+      sourceContent?: string;
+      message?: string;
+    };
+    if (!response.ok || !payload.sourceContent) {
+      throw new Error(payload.message || "Could not fetch source from GitHub.");
+    }
+    return { sourceContent: payload.sourceContent };
+  }
+
+  async function runIssuePatchCycle(
+    issue: SandboxIssue,
+    sourceContent: string,
+    testOutput: string,
+    attemptNumber: number,
+    previousAttempt?: {
+      patchedContent: string;
+      failureReason: string;
+      errorOutput: string;
+      attemptNumber: number;
+    },
+  ) {
+    const pod = podRef.current;
+    const terminal = terminalInstanceRef.current;
+    if (!pod || !terminal) {
+      throw new Error("BrowserPod has not booted yet.");
+    }
+
+    setIssueAttemptNumber(attemptNumber);
+    setIssueFailureContext(null);
+    if (!sourceContent.trim()) {
+      throw new Error("GitHub source content is not loaded.");
+    }
+
+    const proposal = await requestSandboxIssuePatch(
+      issue,
+      sourceContent,
+      testOutput,
+      previousAttempt,
+    );
+    setIssuePatchProposal(proposal);
+    publishRunEvent(runId, {
+      type: "branch.llm_patch_proposed",
+      branchId: issue.id,
+      message: `${proposal.provider}${proposal.isFallback ? "/fallback" : ""} proposed a patch for #${issue.number} (attempt ${attemptNumber}).`,
+      terminalLine: `$ ${proposal.provider} proposed patch for #${issue.number} (attempt ${attemptNumber})`,
+    });
+
+    await writeTextFile(
+      pod,
+      "/forklab-issue/applyPatch.js",
+      createSandboxPatchScript(proposal.patchedContent, issue.targetFile),
+    );
+    setPodStatus("patching");
+    setTerminalLines((current) => [
+      ...current,
+      "$ wrote applyPatch.js",
+      "$ node applyPatch.js",
+    ]);
+    await pod.run("node", ["applyPatch.js"], {
+      terminal,
+      cwd: "/forklab-issue",
+      echo: true,
+    });
+    publishRunEvent(runId, {
+      type: "branch.patch_applied",
+      branchId: issue.id,
+      message: `Patch attempt ${attemptNumber} for #${issue.number} written into BrowserPod.`,
+      terminalLine: "$ node applyPatch.js",
+    });
+
+    setPodStatus("running-command");
+    setTerminalLines((current) => [...current, "$ npm test"]);
+    let secondResult: PodTestResult;
+    try {
+      secondResult = await runIssueTest({ allowFailure: true });
+    } catch (caught) {
+      const errorMessage = caught instanceof Error ? caught.message : String(caught);
+      const failure = {
+        patchedContent: proposal.patchedContent,
+        failureReason: "Tests crashed after applying the patch",
+        errorOutput: errorMessage,
+      };
+      setIssueFailureContext(failure);
+      throw new Error(`Patched tests crashed: ${errorMessage}`);
+    }
+
+    if (secondResult.status !== "passed") {
+      const failure = {
+        patchedContent: proposal.patchedContent,
+        failureReason: `${secondResult.failures.length} assertion failure${secondResult.failures.length === 1 ? "" : "s"} after applying the patch`,
+        errorOutput: formatTestOutput(secondResult),
+      };
+      setSidebarSecondResult(secondResult);
+      setIssueFailureContext(failure);
+      throw new Error(`Patch attempt ${attemptNumber} did not pass BrowserPod verification.`);
+    }
+
+    setSidebarSecondResult(secondResult);
+    publishRunEvent(runId, {
+      type: "branch.test_passed",
+      branchId: issue.id,
+      message: `Issue #${issue.number} tests passed in BrowserPod.`,
+      terminalLine: "PASS npm test",
+    });
+
+    setTerminalLines((current) => [...current, "$ npm run build"]);
+    await pod.run("npm", ["run", "build"], {
+      terminal,
+      cwd: "/forklab-issue",
+      echo: true,
+    });
+    const rawBuildResult = await readTextFile(
+      pod,
+      "/forklab-issue/build-result.json",
+    );
+    const nextBuildResult = JSON.parse(rawBuildResult) as BuildResult;
+    setArenaBuildResult(nextBuildResult);
+
+    setPodStatus("passed");
+    localStorage.setItem(`forklab:${issue.id}:proof-passed`, "true");
+    publishRunEvent(runId, {
+      type: "branch.verified",
+      branchId: issue.id,
+      message: `Issue #${issue.number} verified: tests and build passed in BrowserPod.`,
+      terminalLine: `VERIFIED issue #${issue.number} via BrowserPod`,
+    });
+    setTerminalLines((current) => [
+      ...current,
+      `Passed: issue #${issue.number} verified in BrowserPod.`,
+    ]);
+  }
+
+  async function requestIssueRetry() {
+    if (!sandboxIssue || !issueFailureContext) return;
+    if (issueAttemptNumber >= ISSUE_MAX_ATTEMPTS) return;
+    if (issueRetryStatus === "running") return;
+
+    const nextAttempt = issueAttemptNumber + 1;
+    const previous = {
+      patchedContent: issueFailureContext.patchedContent,
+      failureReason: issueFailureContext.failureReason,
+      errorOutput: issueFailureContext.errorOutput,
+      attemptNumber: issueAttemptNumber,
+    };
+
+    setIssueRetryStatus("running");
+    setSidebarError(null);
+    setSidebarSecondResult(null);
+    setArenaBuildResult(null);
+    setPodStatus("running-command");
+    setTerminalLines((current) => [
+      ...current,
+      `$ retrying issue patch (attempt ${nextAttempt} of ${ISSUE_MAX_ATTEMPTS})`,
+      `previous failure: ${previous.failureReason}`,
+    ]);
+
+    try {
+      await runIssuePatchCycle(
+        sandboxIssue,
+        issueSourceContent,
+        formatTestOutput(sidebarFirstResult ?? { status: "failed", failures: [] }),
+        nextAttempt,
+        previous,
+      );
+    } catch (caught) {
+      setPodStatus("failed");
+      const userError = toUserFacingError(caught);
+      setSidebarError(userError);
+      setTerminalLines((current) => [...current, `Failed: ${userError.message}`]);
+      publishRunEvent(runId, {
+        type: "branch.failed",
+        branchId: sandboxIssue.id,
+        message: userError.message,
+        terminalLine: `Failed (attempt ${nextAttempt}): ${userError.message}`,
+      });
+    } finally {
+      setIssueRetryStatus("idle");
+    }
+  }
+
+  async function requestSandboxIssuePatch(
+    issue: SandboxIssue,
+    sourceContent: string,
+    testOutput: string,
+    previousAttempt?: {
+      patchedContent: string;
+      failureReason: string;
+      errorOutput: string;
+      attemptNumber: number;
+    },
+  ): Promise<IssuePatchProposal> {
+    const body = {
+      issueId: issue.id,
+      sourceContent,
+      testOutput,
+      provider: "auto" as const,
+      previousAttempt,
+    };
+
+    try {
+      const response = await fetch("/api/issues/plan-patch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      if (!response.ok) {
+        const detail = (await response.json()) as { message?: string };
+        throw new Error(detail.message || "Sandbox issue provider failed.");
+      }
+      return (await response.json()) as IssuePatchProposal;
+    } catch (caught) {
+      const message = caught instanceof Error ? caught.message : String(caught);
+      setTerminalLines((current) => [
+        ...current,
+        `Provider unavailable: ${message}`,
+        "$ requesting deterministic sandbox issue patch",
+      ]);
+      const fallback = await fetch("/api/issues/plan-patch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...body, provider: "fallback" }),
+      });
+      if (!fallback.ok) {
+        throw new Error("Fallback sandbox issue patch unavailable.");
+      }
+      return (await fallback.json()) as IssuePatchProposal;
     }
   }
 
@@ -848,6 +1298,54 @@ export default function BranchWorkspacePage() {
     return parsed as PodTestResult;
   }
 
+  async function runIssueTest({ allowFailure }: { allowFailure: boolean }) {
+    const pod = podRef.current;
+    const terminal = terminalInstanceRef.current;
+
+    if (!pod || !terminal) {
+      throw new Error("BrowserPod has not booted yet.");
+    }
+
+    await writeTextFile(
+      pod,
+      "/forklab-issue/test-result.json",
+      JSON.stringify({ status: "pending", failures: [] }),
+    );
+
+    let runError: unknown = null;
+    try {
+      await pod.run("npm", ["test"], {
+        terminal,
+        cwd: "/forklab-issue",
+        echo: true,
+      });
+    } catch (caught) {
+      runError = caught;
+    }
+
+    const rawResult = await readTextFile(pod, "/forklab-issue/test-result.json");
+    const parsed = JSON.parse(rawResult) as {
+      status: string;
+      failures?: Array<{ name: string; message: string }>;
+    };
+
+    if (parsed.status === "pending") {
+      const message =
+        runError instanceof Error
+          ? runError.message
+          : runError
+            ? String(runError)
+            : "test process exited before writing test-result.json";
+      throw new Error(`test-result.json missing valid result: ${message}`);
+    }
+
+    if (!allowFailure && runError && parsed.status !== "passed") {
+      throw runError;
+    }
+
+    return parsed as PodTestResult;
+  }
+
   async function runSidebarTest({ allowFailure }: { allowFailure: boolean }) {
     const pod = podRef.current;
     const terminal = terminalInstanceRef.current;
@@ -953,6 +1451,16 @@ export default function BranchWorkspacePage() {
             Run {arenaVariant.title} pod
           </button>
         ) : null}
+        {sandboxIssue ? (
+          <button
+            className="button primary"
+            type="button"
+            onClick={() => runSandboxIssueProof(sandboxIssue)}
+            disabled={!["idle", "passed", "failed"].includes(podStatus)}
+          >
+            Run issue #{sandboxIssue.number} pod
+          </button>
+        ) : null}
       </section>
 
       <div className="branch-workspace-grid">
@@ -966,7 +1474,28 @@ export default function BranchWorkspacePage() {
             </p>
           </div>
           <div className="branch-step-list">
-            {arenaVariant ? (
+            {sandboxIssue ? (
+              [
+                "branch.booting",
+                "branch.files_written",
+                "branch.test_failed",
+                "branch.llm_patch_proposed",
+                "branch.patch_applied",
+                "branch.test_passed",
+                "branch.verified",
+              ].map((eventType) => (
+                <div className="branch-step" key={eventType}>
+                  <span />
+                  <div>
+                    <strong>{eventType}</strong>
+                    <p>
+                      Issue #{sandboxIssue.number} publishes {eventType} to
+                      the dashboard.
+                    </p>
+                  </div>
+                </div>
+              ))
+            ) : arenaVariant ? (
               [
                 "branch.booting",
                 "branch.files_written",
@@ -1037,7 +1566,7 @@ export default function BranchWorkspacePage() {
         <TerminalPanel
           title={`/branch/${branchId}`}
           nativeRef={
-            branchId === "sidebar-toggle-fix" || arenaVariant
+            branchId === "sidebar-toggle-fix" || arenaVariant || sandboxIssue
               ? terminalRef
               : undefined
           }
@@ -1045,21 +1574,29 @@ export default function BranchWorkspacePage() {
         />
       </div>
 
-      {branchId === "sidebar-toggle-fix" || arenaVariant ? (
+      {branchId === "sidebar-toggle-fix" || arenaVariant || sandboxIssue ? (
         <div className="branch-workspace-grid">
           <section className={`panel${podStatus === "passed" ? " card-glow" : ""}`}>
             <div className="status-row" style={{ marginBottom: 12 }}>
               <span className={`badge ${podStatus === "passed" ? "ok" : podStatus === "failed" ? "fail" : "warn"}`}>
-                {arenaVariant?.title ?? "Sidebar"} proof: {podStatus === "passed" ? "passed" : podStatus === "failed" ? "failed" : "pending"}
+                {sandboxIssue
+                  ? `Issue #${sandboxIssue.number}`
+                  : arenaVariant?.title ?? "Sidebar"} proof: {podStatus === "passed" ? "passed" : podStatus === "failed" ? "failed" : "pending"}
               </span>
             </div>
             <div className="report">
               <ProofItem
-                label="Failing route-change test"
+                label={sandboxIssue ? "Failing issue regression" : "Failing route-change test"}
                 done={sidebarFirstResult?.status === "failed"}
               />
               <ProofItem
-                label={arenaVariant ? "Branch patch applied" : "Deterministic patch applied"}
+                label={
+                  sandboxIssue
+                    ? "Issue patch applied"
+                    : arenaVariant
+                      ? "Branch patch applied"
+                      : "Deterministic patch applied"
+                }
                 done={Boolean(sidebarFirstResult)}
               />
               <ProofItem
@@ -1077,20 +1614,84 @@ export default function BranchWorkspacePage() {
           <section className="card stack">
             <div>
               <p className="eyebrow">Patch diff</p>
-              <h2>{arenaVariant?.title ?? sidebarTargetFile}</h2>
+              <h2>
+                {sandboxIssue
+                  ? sandboxIssue.targetFile
+                  : arenaVariant?.title ?? sidebarTargetFile}
+              </h2>
               <p className="muted-copy">
-                {arenaVariant
+                {sandboxIssue
+                  ? sandboxIssue.summary
+                  : arenaVariant
                   ? arenaVariant.summary
                   : "The patch closes the sidebar on route navigation while preserving toggle and unknown-event behavior."}
               </p>
             </div>
             <pre className="agent-diff-block">
-              {arenaVariant
+              {sandboxIssue
+                ? createSandboxIssueDiff(
+                    sandboxIssue,
+                    issueSourceContent || "// Waiting for GitHub source...",
+                    issuePatchProposal?.patchedContent ??
+                      (issueSourceContent || "// Waiting for patch proposal..."),
+                  )
+                : arenaVariant
                 ? arenaPatchProposal
                   ? createDynamicArenaDiff(arenaPatchProposal.patchedContent)
                   : createArenaDiff(arenaVariant)
                 : createSidebarDiff()}
             </pre>
+            {sandboxIssue && issuePatchProposal ? (
+              <div className="stack" style={{ gap: 10 }}>
+                <div className="status-row">
+                  <span
+                    className={`badge ${
+                      issuePatchProposal.isFallback ? "warn" : "ok"
+                    }`}
+                  >
+                    {issuePatchProposal.provider}
+                    {issuePatchProposal.isFallback ? " (fallback)" : ""}
+                  </span>
+                  <span className="muted-copy">
+                    {issuePatchProposal.diagnosis}
+                  </span>
+                </div>
+                <div className="status-row">
+                  <button
+                    className="button primary"
+                    type="button"
+                    onClick={pushVerifiedIssuePatch}
+                    disabled={podStatus !== "passed" || issuePushStatus === "pushing"}
+                  >
+                    {issuePushStatus === "pushing"
+                      ? "Pushing verified patch..."
+                      : issuePushStatus === "pushed"
+                        ? "Verified patch pushed"
+                        : "Push verified patch to GitHub"}
+                  </button>
+                  {issuePushMessage ? (
+                    issuePushStatus === "pushed" &&
+                    issuePushMessage.startsWith("http") ? (
+                      <a className="button" href={issuePushMessage} target="_blank">
+                        Open branch
+                      </a>
+                    ) : (
+                      <span
+                        className={
+                          issuePushStatus === "failed" ? "text-fail" : "muted-copy"
+                        }
+                      >
+                        {issuePushMessage}
+                      </span>
+                    )
+                  ) : (
+                    <span className="muted-copy">
+                      Enabled only after BrowserPod verification passes.
+                    </span>
+                  )}
+                </div>
+              </div>
+            ) : null}
             {arenaVariant && arenaPatchProposal ? (
               <div className="status-row">
                 <span
@@ -1114,7 +1715,11 @@ export default function BranchWorkspacePage() {
         <section className="truth-panel">
           <div>
             <p className="eyebrow">Preview artifact</p>
-            <h2>{arenaBuildResult.branch}</h2>
+            <h2>
+              {arenaBuildResult.branch ??
+                arenaBuildResult.title ??
+                `Issue #${arenaBuildResult.issue}`}
+            </h2>
           </div>
           <div className="agent-meta">
             <div>
@@ -1122,15 +1727,20 @@ export default function BranchWorkspacePage() {
               <strong>{arenaBuildResult.status}</strong>
             </div>
             <div>
-              <span>Strategy</span>
-              <strong>{arenaBuildResult.strategy}</strong>
+              <span>{arenaBuildResult.strategy ? "Strategy" : "Repo issue"}</span>
+              <strong>
+                {arenaBuildResult.strategy ??
+                  `${arenaBuildResult.repo} #${arenaBuildResult.issue}`}
+              </strong>
             </div>
             <div>
               <span>Files changed</span>
               <strong>{arenaBuildResult.filesChanged.join(", ")}</strong>
             </div>
           </div>
-          <pre className="agent-terminal">{arenaBuildResult.previewHtml}</pre>
+          {arenaBuildResult.previewHtml ? (
+            <pre className="agent-terminal">{arenaBuildResult.previewHtml}</pre>
+          ) : null}
         </section>
       ) : null}
 
@@ -1171,6 +1781,34 @@ export default function BranchWorkspacePage() {
               )}
             </div>
           ) : null}
+          {sandboxIssue && issueFailureContext ? (
+            <div className="stack" style={{ gap: 8, marginTop: 12 }}>
+              <div className="status-row">
+                <span className="badge warn">
+                  Attempt {issueAttemptNumber} of {ISSUE_MAX_ATTEMPTS}
+                </span>
+                <span className="badge info">
+                  {issueFailureContext.failureReason}
+                </span>
+              </div>
+              {issueAttemptNumber < ISSUE_MAX_ATTEMPTS ? (
+                <button
+                  className="button primary"
+                  type="button"
+                  onClick={requestIssueRetry}
+                  disabled={issueRetryStatus === "running"}
+                >
+                  {issueRetryStatus === "running"
+                    ? "Asking AI for a corrected fix..."
+                    : `Retry AI fix (attempt ${issueAttemptNumber + 1})`}
+                </button>
+              ) : (
+                <p className="muted-copy">
+                  Maximum retries reached for issue #{sandboxIssue.number}.
+                </p>
+              )}
+            </div>
+          ) : null}
         </section>
       ) : null}
 
@@ -1186,6 +1824,8 @@ export default function BranchWorkspacePage() {
                 ? "Sidebar branch runs its own real BrowserPod proof."
               : arenaVariant
                 ? `${arenaVariant.title} is one of three same-task BrowserPod solution branches.`
+              : sandboxIssue
+                ? `Sandbox GitHub issue #${sandboxIssue.number} runs in its own BrowserPod.`
               : "This branch is not verified yet."}
           </h2>
         </div>
@@ -1198,6 +1838,8 @@ export default function BranchWorkspacePage() {
               ? "This branch boots BrowserPod directly in the branch workspace, runs a failing route-change test, applies a deterministic patch, and only then publishes verified."
             : arenaVariant
               ? "This tab runs one isolated BrowserPod for one sidebar solution strategy. The run dashboard compares it against the other two arena branches."
+            : sandboxIssue
+              ? "This tab fetches the issue target file from GitHub before BrowserPod writes it. ForkLab supplies the demo test harness, while the source code and final push target are the real repository."
             : "This tab only publishes queued/preview state. It does not claim BrowserPod verification."}
         </p>
       </section>

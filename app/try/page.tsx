@@ -12,9 +12,9 @@ type ModalType = "files" | "connectors" | "skills" | null;
 const templates = [
   {
     id: "sprint",
-    title: "Solution Arena",
-    kicker: "3 approaches, 1 bug",
-    description: "One sidebar task -> 3 BrowserPod branches -> compare winner.",
+    title: "GitHub Issues Arena",
+    kicker: "5 issues, pick 3",
+    description: "Select sandbox GitHub issues -> run parallel BrowserPod branches.",
     status: "Live",
   },
   {
@@ -69,7 +69,7 @@ const variantBranches = [
 ] as const;
 
 const defaultPrompt =
-  "Fix the sidebar toggle bug with Minimal, Robust, and UX Polish branches.";
+  "Select up to three sandbox GitHub issues and run them in parallel.";
 
 export default function TryPage() {
   const router = useRouter();
@@ -101,7 +101,7 @@ export default function TryPage() {
         { role: "User", text: prompt || defaultPrompt },
         {
           role: "ForkLab",
-          text: "Launching Parallel Solution Arena. Three BrowserPod branches will run the same sidebar bug with different solution strategies.",
+          text: "Launching GitHub Issues Arena. Selected sandbox issues will run as parallel BrowserPod branches.",
         },
       ];
     }
@@ -153,7 +153,7 @@ export default function TryPage() {
             Open Smoke Test
           </Link>
           <Link href="/arena" className="button">
-            Open Solution Arena
+            Open Issues Arena
           </Link>
           <Link href="/sprint" className="button">
             Open Live Sprint Proof
@@ -286,8 +286,8 @@ export default function TryPage() {
               </button>
             </div>
             <p className="prompt-helper">
-              For the PDF-aligned flagship demo, open Solution Arena to launch
-              three same-task BrowserPod branches.
+              Open GitHub Issues Arena to select up to three sandbox repo
+              issues and launch them as parallel BrowserPod branches.
             </p>
           </div>
         </section>
@@ -321,8 +321,8 @@ export default function TryPage() {
         <div className="truth-grid">
           <TruthItem label="Real" text="/sandbox-test BrowserPod smoke test" />
           <TruthItem label="Real" text="/sprint CSV fail → patch → pass" />
-          <TruthItem label="Preview" text="connectors, skills.md, Variant Arena" />
-          <TruthItem label="Next" text="multiple real pods, GitHub PRs, MCP tools" />
+          <TruthItem label="Real" text="sandbox GitHub issue list with max-three selection" />
+          <TruthItem label="Next" text="real GitHub OAuth, arbitrary repos, MCP tools" />
         </div>
       </section>
 

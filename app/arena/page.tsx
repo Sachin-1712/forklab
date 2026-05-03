@@ -2,25 +2,97 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useEffect, useMemo, useState } from "react";
 import {
   branchPath,
   createRunId,
   createRunSnapshot,
-  createSidebarArenaBranchList,
   publishRunEvent,
   runPath,
   saveRunSnapshot,
 } from "@/lib/runEvents";
-import { sidebarArenaVariants } from "@/lib/sidebarArena";
+import {
+  createSandboxIssueBranchList,
+  sandboxIssues,
+  sandboxRepo,
+  type SandboxIssue,
+  type SandboxIssueId,
+} from "@/lib/sandboxIssues";
 
-const arenaPrompt = "Fix the sidebar toggle bug in this sample React app.";
+const maxIssueSelection = 3;
 
 export default function ArenaPage() {
   const router = useRouter();
+  const [githubIssues, setGithubIssues] = useState<SandboxIssue[]>([]);
+  const [issueSourceStatus, setIssueSourceStatus] = useState<
+    "loading" | "github" | "fallback" | "failed"
+  >("loading");
+  const [selectedIssueIds, setSelectedIssueIds] = useState<SandboxIssueId[]>([
+    "issue-1",
+    "issue-2",
+    "issue-3",
+  ]);
+  const visibleIssues = githubIssues.length ? githubIssues : sandboxIssues;
+  const selectedIssues = useMemo(
+    () =>
+      selectedIssueIds
+        .map((issueId) => visibleIssues.find((issue) => issue.id === issueId))
+        .filter((issue): issue is (typeof sandboxIssues)[number] =>
+          Boolean(issue),
+        ),
+    [selectedIssueIds, visibleIssues],
+  );
+  const arenaPrompt = selectedIssues.length
+    ? `Fix selected GitHub issues in ${sandboxRepo.owner}/${sandboxRepo.name}: ${selectedIssues
+        .map((issue) => `#${issue.number}`)
+        .join(", ")}.`
+    : `Select up to ${maxIssueSelection} GitHub issues to run in parallel.`;
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadIssues() {
+      try {
+        const response = await fetch("/api/issues/list", { cache: "no-store" });
+        if (!response.ok) throw new Error(`GitHub returned ${response.status}`);
+        const payload = (await response.json()) as {
+          source: "github" | "fallback";
+          issues: SandboxIssue[];
+        };
+        if (cancelled) return;
+        setGithubIssues(payload.issues);
+        setIssueSourceStatus(payload.source);
+        if (payload.issues.length) {
+          setSelectedIssueIds(
+            payload.issues.slice(0, maxIssueSelection).map((issue) => issue.id),
+          );
+        }
+      } catch {
+        if (!cancelled) setIssueSourceStatus("failed");
+      }
+    }
+
+    void loadIssues();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  function toggleIssue(issueId: SandboxIssueId) {
+    setSelectedIssueIds((current) => {
+      if (current.includes(issueId)) {
+        return current.filter((candidate) => candidate !== issueId);
+      }
+      if (current.length >= maxIssueSelection) return current;
+      return [...current, issueId];
+    });
+  }
 
   function launchArena() {
+    if (!selectedIssueIds.length) return;
+
     const runId = createRunId();
-    const branches = createSidebarArenaBranchList();
+    const branches = createSandboxIssueBranchList(selectedIssueIds);
     let tabsBlocked = false;
 
     saveRunSnapshot(
@@ -29,15 +101,15 @@ export default function ArenaPage() {
         runId,
         prompt: arenaPrompt,
         branches,
-        mode: "sidebar-arena",
+        mode: "sandbox-issues",
+        repoFullName: `${sandboxRepo.owner}/${sandboxRepo.name}`,
       }),
     );
 
     publishRunEvent(runId, {
       type: "run.created",
-      message:
-        "Parallel Sidebar Bug Arena created: Minimal, Robust, and UX Polish branches.",
-      terminalLine: "$ run.created parallel-sidebar-arena",
+      message: `Sandbox GitHub issue run created for ${branches.length} selected issue${branches.length === 1 ? "" : "s"}.`,
+      terminalLine: "$ run.created sandbox-github-issues",
     });
 
     branches.forEach((branch) => {
@@ -64,35 +136,115 @@ export default function ArenaPage() {
     <div className="arena-shell">
       <header className="workbench-hero">
         <div>
-          <p className="eyebrow">Parallel AI Solution Arena</p>
-          <h1>Run 3 AI approaches side-by-side.</h1>
+          <p className="eyebrow">GitHub Issues Arena</p>
+          <h1>Select issues. Run up to 3 in parallel.</h1>
           <p className="muted-copy">
-            ForkLab launches three isolated BrowserPod branches for one sidebar
-            bug, runs each solution, compares proof, and recommends the best
-            verified result.
+            ForkLab reads issues and target source files from the real
+            sandbox GitHub repo. Pick simple issues, launch isolated BrowserPod
+            branches, and verify each patch before trusting it.
           </p>
         </div>
         <div className="status-row">
-          <span className="badge ok">3 BrowserPod branches</span>
-          <span className="badge info">Same task</span>
-          <span className="badge warn">Winner by proof</span>
+          <span className={`badge ${issueSourceStatus === "github" ? "ok" : "warn"}`}>
+            {issueSourceStatus === "github" ? "GitHub issues live" : "fallback catalog"}
+          </span>
+          <span className="badge info">{visibleIssues.length} demo issues</span>
+          <span className="badge warn">Max 3 selected</span>
         </div>
       </header>
 
       <section className="proof-banner">
-        Parallel AI branches. Verified in browser sandboxes.
+        GitHub-style issues. Parallel BrowserPod branches. Verified before accept.
       </section>
 
-      <div className="arena-layout">
+      <div className="issue-arena-layout">
+        <aside className="card stack issue-sidebar">
+          <div>
+            <p className="eyebrow">Repository</p>
+            <h2>{sandboxRepo.name}</h2>
+            <p className="muted-copy">
+              {sandboxRepo.owner}/{sandboxRepo.name} on {sandboxRepo.defaultBranch}
+            </p>
+          </div>
+
+          <div className="repo-connect-panel">
+            <div>
+              <span>GitHub connector</span>
+              <strong>
+                {issueSourceStatus === "github"
+                  ? "Live repo issues"
+                  : issueSourceStatus === "loading"
+                    ? "Loading GitHub"
+                  : "Fallback catalog"}
+              </strong>
+            </div>
+            <a
+              className="button"
+              href={`https://github.com/${sandboxRepo.owner}/${sandboxRepo.name}/issues`}
+              target="_blank"
+            >
+              Open GitHub
+            </a>
+          </div>
+
+          {issueSourceStatus !== "github" ? (
+            <div className="info-callout">
+              ForkLab could not reach GitHub issues and is showing the local
+              catalog. Refresh after GitHub access is available.
+            </div>
+          ) : null}
+
+          <div className="issue-list-header">
+            <span>Open issues</span>
+            <strong>
+              {selectedIssueIds.length}/{maxIssueSelection} selected
+            </strong>
+          </div>
+
+          <div className="issue-list" aria-label="Sandbox GitHub issues">
+            {visibleIssues.map((issue) => {
+              const selected = selectedIssueIds.includes(issue.id);
+              const disabled =
+                !selected && selectedIssueIds.length >= maxIssueSelection;
+
+              return (
+                <label
+                  className={`issue-row${selected ? " selected" : ""}${
+                    disabled ? " disabled" : ""
+                  }`}
+                  key={issue.id}
+                >
+                  <input
+                    type="checkbox"
+                    checked={selected}
+                    disabled={disabled}
+                    onChange={() => toggleIssue(issue.id)}
+                  />
+                  <span>
+                    <strong>
+                      #{issue.number} {issue.title}
+                    </strong>
+                    <small>{issue.summary}</small>
+                    <em>
+                      {issue.labels.join(" / ")}
+                      {issue.githubUrl ? " / GitHub" : " / local fallback"}
+                    </em>
+                  </span>
+                </label>
+              );
+            })}
+          </div>
+        </aside>
+
         <section className="card stack">
           <div>
             <p className="eyebrow">Task input</p>
-            <h2>Sample sidebar bug</h2>
+            <h2>Parallel issue run</h2>
             <p className="muted-copy">
-              The sidebar reducer keeps the mobile menu open after route
-              navigation. Each branch receives the same buggy starter file,
-              asks the configured LLM for a patch using its own strategy
-              directive, and proves the fix in BrowserPod.
+              Selected issues become isolated branches. Each branch writes a
+              tiny repo slice, runs the failing test, asks the server-side LLM
+              planner for a patch, applies it, reruns tests, and reports proof
+              back to the dashboard.
             </p>
           </div>
           <div className="prompt-box">
@@ -102,68 +254,66 @@ export default function ArenaPage() {
               value={arenaPrompt}
             />
             <div className="prompt-actions">
-              <button className="button primary" type="button" onClick={launchArena}>
-                Launch 3 BrowserPod branches
+              <button
+                className="button primary"
+                type="button"
+                onClick={launchArena}
+                disabled={!selectedIssueIds.length}
+              >
+                Launch selected issues
               </button>
               <Link className="button" href="/workbench">
                 Open enterprise workbench
               </Link>
             </div>
             <p className="prompt-helper">
-              The browser may ask to allow popups because ForkLab opens one tab
-              per BrowserPod branch.
+              For the live demo, allow popups. ForkLab opens one tab per
+              selected issue branch.
             </p>
           </div>
         </section>
 
         <section className="card stack">
           <div>
-            <p className="eyebrow">Comparison plan</p>
-            <h2>Winner criteria</h2>
+            <p className="eyebrow">Demo repo contents</p>
+            <h2>Simple patch targets</h2>
           </div>
           <div className="artifact-list">
-            <div>
-              <span>Correctness</span>
-              <strong>tests pass</strong>
-            </div>
-            <div>
-              <span>Maintainability</span>
-              <strong>small clear patch</strong>
-            </div>
-            <div>
-              <span>Risk</span>
-              <strong>limited behavior change</strong>
-            </div>
-            <div>
-              <span>UX impact</span>
-              <strong>navigation quality</strong>
-            </div>
+            {selectedIssues.map((issue) => (
+              <div key={issue.id}>
+                <span>#{issue.number}</span>
+                <strong>{issue.targetFile}</strong>
+              </div>
+            ))}
           </div>
         </section>
       </div>
 
       <section className="truth-panel">
         <div>
-          <p className="eyebrow">Branch strategies</p>
-          <h2>Same bug, three approaches</h2>
+          <p className="eyebrow">Issue branch examples</p>
+          <h2>Built for a reliable live demo</h2>
         </div>
         <div className="agent-grid">
-          {sidebarArenaVariants.map((variant) => (
-            <article className="agent-card" key={variant.id}>
+          {selectedIssues.map((issue) => (
+            <article className="agent-card" key={issue.id}>
               <div className="status-row">
-                <span className="badge info">{variant.agentStyle}</span>
+                <span className="badge info">
+                  #{issue.number}
+                </span>
+                <span className="badge">Risk: {issue.risk}</span>
               </div>
-              <h3>{variant.title}</h3>
-              <p>{variant.strategy}</p>
+              <h3>{issue.title}</h3>
+              <p>{issue.body}</p>
               <div className="agent-meta">
                 <div>
-                  <span>What it tries</span>
-                  <strong>{variant.summary}</strong>
+                  <span>Target</span>
+                  <strong>{issue.targetFile}</strong>
                 </div>
               </div>
               <pre className="agent-terminal">{`$ npm test
-FAIL route change closes sidebar
-$ node applyPatch.js
+FAIL issue regression
+$ POST /api/issues/plan-patch
 $ npm test
 PASS all checks
 $ npm run build
@@ -181,19 +331,19 @@ PASS preview artifact`}</pre>
         <div className="truth-grid">
           <TruthItem
             label="Real"
-            text="Each branch opens a tab and boots its own BrowserPod instance."
+            text="Each selected issue opens a tab and boots its own BrowserPod instance."
           />
           <TruthItem
             label="Real"
-            text="Each branch writes files, runs failing tests, applies its patch, reruns tests, and runs a build script."
+            text="Each issue branch writes sandbox repo files, runs failing tests, calls a server-only LLM planner, applies a patch, reruns tests, and runs a build script."
           />
           <TruthItem
             label="Real"
-            text="The dashboard compares real branch events and only marks verified after tests pass."
+            text="The issue list and target source files are loaded from Jyozaa/forklab-sandbox-issues on GitHub; ForkLab supplies the demo test harness."
           />
           <TruthItem
             label="Preview"
-            text="Frontend visual previews are HTML artifacts, not full React dev-server portals yet."
+            text="Connecting arbitrary real GitHub repos is still a future extension."
           />
         </div>
       </section>
